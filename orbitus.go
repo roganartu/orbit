@@ -1,5 +1,9 @@
 package orbitus
 
+import (
+	"errors"
+)
+
 // Consumer handler function.
 // Defaults are provided, however it is expected most users will define their
 // own functions. These functions will be called by the Orbiters upon launch
@@ -12,6 +16,10 @@ package orbitus
 // will be allowed to process up to an including the new value.
 // The second parameter is the index that the function should start processing
 // from.
+// If the consumers current index is equal to the index of the consumer ahead of
+// it the consumer should do wait until this changes before processing any
+// messages. This state should only really ever happen on startup, but it is
+// safe practice for the system in any case.
 type Handler func(Orbiter, uint64)
 
 // The actual message that will be stored in the ring buffer.
@@ -86,4 +94,59 @@ type OutputOrbiter struct {
 	// Publisher
 	publisherIndex   uint64
 	publisherHandler Handler
+}
+
+// Initializers
+
+// Creates a new InputOrbiter
+func NewInputOrbiter(
+	size uint64,
+	receiver Handler,
+	journaler Handler,
+	replicator Handler,
+	unmarshaller Handler,
+	executor Handler,
+) *InputOrbiter {
+	orbiter := &InputOrbiter{
+		// All the indexes start at zero. The consumers should do nothing in the
+		// case that their index is the same as the consumer ahead of them.
+		receiverIndex:     0,
+		journalerIndex:    0,
+		replicatorIndex:   0,
+		unmarshallerIndex: 0,
+
+		// Handlers
+		receiverHandler:     receiver,
+		journalerHandler:    journaler,
+		replicatorHandler:   replicator,
+		unmarshallerHandler: unmarshaller,
+
+		// Allocate the buffer
+		Orbiter: Orbiter{
+			buffer_size:     size,
+			buffer:          make([]*Message, size),
+			executorHandler: executor,
+		},
+	}
+
+	// Create 'size' new Message objects and store them in the buffer
+	var i uint64
+	for i = 0; i < size; i++ {
+		orbiter.buffer[i] = new(Message)
+	}
+
+	return orbiter
+}
+
+// Getters
+
+// Get Message at given buffer address
+func (o *Orbiter) getMessage(i uint64) (*Message, error) {
+	// Bounds check
+	if i >= o.buffer_size {
+		err := errors.New("Message index out of range")
+		return nil, err
+	}
+
+	return o.buffer[i], nil
 }
