@@ -10,13 +10,18 @@ var (
 	test               = "Test string"
 )
 
-// Initializers
-
 func TestNewInputOrbiter(t *testing.T) {
 	orbiter := NewInputOrbiter(buffer_size, nil, nil, nil, nil, nil)
+	var i uint64 = 0
 
-	// Make sure buffer has been fully allocated
-	var i uint64
+	// Ensure all the indexes are initialized to zero
+	assert.Equal(t, i, orbiter.GetReceiverIndex())
+	assert.Equal(t, i, orbiter.GetJournalerIndex())
+	assert.Equal(t, i, orbiter.GetReplicatorIndex())
+	assert.Equal(t, i, orbiter.GetUnmarshallerIndex())
+	assert.Equal(t, i, orbiter.GetExecutorIndex())
+
+	// Ensure buffer has been fully allocated
 	for i = 0; i < buffer_size; i++ {
 		msg := orbiter.GetMessage(i)
 		msg.marshalled = []byte(test + string(i))
@@ -28,8 +33,6 @@ func TestNewInputOrbiter(t *testing.T) {
 	}
 }
 
-// Getters
-
 func TestGetMessage(t *testing.T) {
 	orbiter := NewInputOrbiter(buffer_size, nil, nil, nil, nil, nil)
 
@@ -38,4 +41,27 @@ func TestGetMessage(t *testing.T) {
 	msg.marshalled = []byte(test + string(1))
 	msg = orbiter.GetMessage(1 + buffer_size)
 	assert.Equal(t, msg.marshalled, []byte(test+string(1)))
+}
+
+func TestInputOrbiterReset(t *testing.T) {
+	orbiter := NewInputOrbiter(buffer_size, nil, nil, nil, nil, nil)
+	var i uint64
+	testvals := []uint64{1, buffer_size - 1, buffer_size, buffer_size + 1}
+
+	for _, i = range testvals {
+		err := orbiter.Reset(i)
+		assert.Equal(t, nil, err)
+
+		// Ensure all indexes have been set to the given value
+		assert.Equal(t, i, orbiter.GetReceiverIndex())
+		assert.Equal(t, i, orbiter.GetJournalerIndex())
+		assert.Equal(t, i, orbiter.GetReplicatorIndex())
+		assert.Equal(t, i, orbiter.GetUnmarshallerIndex())
+		assert.Equal(t, i, orbiter.GetExecutorIndex())
+	}
+
+	// Ensure orbiter does not reset if running
+	orbiter.running = true
+	err := orbiter.Reset(buffer_size)
+	assert.Equal(t, "Cannot reset a running Orbiter", err.Error())
 }

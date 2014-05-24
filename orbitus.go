@@ -68,6 +68,9 @@ type Orbiter struct {
 	// Business Logic Consumer
 	executorIndex   uint64
 	executorHandler Handler
+
+	// Flag to indicate whether Orbiter is running
+	running bool
 }
 
 // InputOrbiter unmarshals messages and coordinates journalling and replication.
@@ -104,8 +107,6 @@ type OutputOrbiter struct {
 	publisherHandler Handler
 }
 
-// Initializers
-
 // NewInputOrbiter initializes a new InputOrbiter.
 // All indexes are set to 0 and handlers are assigned.
 // Space for the buffer is allocated and is filled with empty Message objects.
@@ -137,6 +138,9 @@ func NewInputOrbiter(
 			buffer_size:     size,
 			buffer:          make([]*Message, size),
 			executorHandler: executor,
+
+			// Start in stopped state
+			running: false,
 		},
 	}
 
@@ -149,7 +153,27 @@ func NewInputOrbiter(
 	return orbiter
 }
 
-// Getters
+// Reset sets all indexes to a given value.
+// This is useful for rebuilding Orbiter state from an input file
+// (eg: journaled output) instead of manually looping through the buffer until
+// the desired index is reached.
+//
+// Returns an error if called while Orbiter is running. Stop Orbiter with
+// Orbiter.Stop() before resetting.
+func (o *InputOrbiter) Reset(i uint64) error {
+	if o.running {
+		return errors.New("Cannot reset a running Orbiter")
+	}
+
+	// Bypass the setters otherwise their sanity checks will error
+	o.receiverIndex = i
+	o.journalerIndex = i
+	o.replicatorIndex = i
+	o.unmarshallerIndex = i
+	o.executorIndex = i
+
+	return nil
+}
 
 // GetMessage returns the message at the given address in the buffer.
 //
@@ -162,4 +186,44 @@ func (o *Orbiter) GetMessage(i uint64) *Message {
 	}
 
 	return o.buffer[i]
+}
+
+// GetBufferSize returns the size of the Orbiter's Message buffer array.
+func (o *Orbiter) GetBufferSize() uint64 {
+	return o.buffer_size
+}
+
+// GetExecutorIndex returns the Orbiter's current executorIndex.
+// This index may be larger than the buffer size, as the modulus is used to get
+// a valid array index.
+func (o *Orbiter) GetExecutorIndex() uint64 {
+	return o.executorIndex
+}
+
+// GetReceiverIndex returns the InputOrbiter's current receiverIndex.
+// This index may be larger than the buffer size, as the modulus is used to get
+// a valid array index.
+func (o *InputOrbiter) GetReceiverIndex() uint64 {
+	return o.receiverIndex
+}
+
+// GetJournalerIndex returns the InputOrbiter's current journalerIndex.
+// This index may be larger than the buffer size, as the modulus is used to get
+// a valid array index.
+func (o *InputOrbiter) GetJournalerIndex() uint64 {
+	return o.journalerIndex
+}
+
+// GetUnmarshallerIndex returns the InputOrbiter's current unmarshallerIndex.
+// This index may be larger than the buffer size, as the modulus is used to get
+// a valid array index.
+func (o *InputOrbiter) GetUnmarshallerIndex() uint64 {
+	return o.unmarshallerIndex
+}
+
+// GetReplicatorIndex returns the InputOrbiter's current replicatorIndex.
+// This index may be larger than the buffer size, as the modulus is used to get
+// a valid array index.
+func (o *InputOrbiter) GetReplicatorIndex() uint64 {
+	return o.replicatorIndex
 }
