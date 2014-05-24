@@ -1,28 +1,35 @@
+// Package orbitus provides an implementation of the LMAX Disruptor.
+//
+// For more info on LMAX see Martin Fowler's blog post: http://martinfowler.com/articles/lmax.html
+//
+// Alternatively read the paper: http://disruptor.googlecode.com/files/Disruptor-1.0.pdf
 package orbitus
 
 import (
 	"errors"
 )
 
-// Consumer handler function.
+// Handler is the Consumer handler function type.
 // Defaults are provided, however it is expected most users will define their
 // own functions. These functions will be called by the Orbiters upon launch
 // and are expected to be long-running processes.
-// They should remember the index of the last item they have processed. It is
-// the function's responsibility to update the corresponding index via the
+// It should remember the index of the last item they have processed. It is
+// Handler's responsibility to update the corresponding index via the
 // appropriate Orbiter methods.
+//
 // It is assumed that all objects between the index stored in the Orbiter
 // and the next consumer (backwards). Once this index is set the consumer behind
 // will be allowed to process up to an including the new value.
 // The second parameter is the index that the function should start processing
 // from.
+//
 // If the consumers current index is equal to the index of the consumer ahead of
 // it the consumer should do wait until this changes before processing any
-// messages. This state should only really ever happen on startup, but it is
-// safe practice for the system in any case.
+// messages. This state should only really ever happen on startup or reset, but
+// it is safe practice for the system in any case.
 type Handler func(Orbiter, uint64)
 
-// The actual message that will be stored in the ring buffer.
+// Message is the object that is stored in the Orbiter ring buffer.
 // Each consumer must only have write access to a single field.
 // This means the data will be duplicated, but it prevents unnecessary locking.
 type Message struct {
@@ -43,12 +50,13 @@ type Message struct {
 	output interface{}
 }
 
-// Notes about both the input and output orbiters below:
-// The consumers are defined in the order they will be in the ring buffer,
-// with the exception of the Business Logic Consumer which is last in the
-// InputOrbiter and first in the OutputOrbiter.
-
-// Base Orbiter
+// Orbiter maintains a buffer and Business Logic Consumer handler.
+// It is included in both InputOrbiter and OutputOrbiter.
+//
+// In both the InputOrbiter and OutputOrbiter objects the consumers are
+// defined in the order they will be in the ring buffer, with the exception
+// of the Business Logic Consumer which is last in the InputOrbiter and first
+// in the OutputOrbiter.
 type Orbiter struct {
 	// The actual buffer
 	buffer []*Message
@@ -62,7 +70,7 @@ type Orbiter struct {
 	executorHandler Handler
 }
 
-// Input buffer
+// InputOrbiter unmarshals messages and coordinates journalling and replication.
 type InputOrbiter struct {
 	Orbiter
 
@@ -83,7 +91,7 @@ type InputOrbiter struct {
 	unmarshallerHandler Handler
 }
 
-// Output buffer
+// OutputOrbiter marshals Business Logic Consumer output and sends it to clients.
 type OutputOrbiter struct {
 	Orbiter
 
@@ -98,7 +106,10 @@ type OutputOrbiter struct {
 
 // Initializers
 
-// Creates a new InputOrbiter
+// NewInputOrbiter initializes a new InputOrbiter.
+// All indexes are set to 0 and handlers are assigned.
+// Space for the buffer is allocated and is filled with empty Message objects.
+// It returns a pointer to the initialized InputOrbiter.
 func NewInputOrbiter(
 	size uint64,
 	receiver Handler,
@@ -140,7 +151,8 @@ func NewInputOrbiter(
 
 // Getters
 
-// Get Message at given buffer address
+// GetMessage returns the message at the given address in the buffer.
+// An error is returned if the provided index is greater than the buffer size.
 func (o *Orbiter) GetMessage(i uint64) (*Message, error) {
 	// Bounds check
 	if i >= o.buffer_size {
