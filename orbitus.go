@@ -141,7 +141,7 @@ func NewInputOrbiter(
 // Getters
 
 // Get Message at given buffer address
-func (o *Orbiter) getMessage(i uint64) (*Message, error) {
+func (o *Orbiter) GetMessage(i uint64) (*Message, error) {
 	// Bounds check
 	if i >= o.buffer_size {
 		err := errors.New("Message index out of range")

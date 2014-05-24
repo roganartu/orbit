@@ -18,13 +18,13 @@ func TestNewInputOrbiter(t *testing.T) {
 	// Make sure buffer has been fully allocated
 	var i uint64
 	for i = 0; i < buffer_size; i++ {
-		msg, err := orbiter.getMessage(i)
+		msg, err := orbiter.GetMessage(i)
 		assert.Equal(t, nil, err)
 		msg.marshalled = []byte(test + string(i))
 	}
 
 	for i = 0; i < buffer_size; i++ {
-		msg, err := orbiter.getMessage(i)
+		msg, err := orbiter.GetMessage(i)
 		assert.Equal(t, nil, err)
 		assert.Equal(t, msg.marshalled, []byte(test+string(i)))
 	}
@@ -36,7 +36,7 @@ func TestGetMessage(t *testing.T) {
 	orbiter := NewInputOrbiter(buffer_size, nil, nil, nil, nil, nil)
 
 	// Check out of bounds error
-	msg, err := orbiter.getMessage(buffer_size)
+	msg, err := orbiter.GetMessage(buffer_size)
 	assert.Equal(t, (*Message)(nil), msg)
 	assert.Equal(t, "Message index out of range", err.Error())
 }
