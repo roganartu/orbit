@@ -152,13 +152,14 @@ func NewInputOrbiter(
 // Getters
 
 // GetMessage returns the message at the given address in the buffer.
-// An error is returned if the provided index is greater than the buffer size.
-func (o *Orbiter) GetMessage(i uint64) (*Message, error) {
+//
+// If the provided index is larger than the buffer size then the modulus is
+// used to generate an index that is in range.
+func (o *Orbiter) GetMessage(i uint64) *Message {
 	// Bounds check
 	if i >= o.buffer_size {
-		err := errors.New("Message index out of range")
-		return nil, err
+		i = i % o.buffer_size
 	}
 
-	return o.buffer[i], nil
+	return o.buffer[i]
 }
