@@ -128,6 +128,7 @@ type inputOrbiter struct {
 	// Receiver
 	receiverIndex   uint64
 	receiverHandler Handler
+	receiverBuffer  chan []byte
 
 	// Journaler
 	journalerIndex   uint64
@@ -186,6 +187,9 @@ func NewInputOrbiter(
 			// Start in stopped state
 			running: false,
 		},
+
+		// Create the channel for the receiverBuffer
+		receiverBuffer: make(chan []byte, 4096),
 	}
 	// Start at index 4 so we don't have index underflow
 	orbiter.Reset(4)
@@ -220,6 +224,16 @@ func (o *inputOrbiter) Reset(i uint64) error {
 	o.executorIndex = i - 4
 
 	return nil
+}
+
+// Start starts the Orbiter processing.
+// It launches a number of goroutines (one for each Handler + one manager).
+//
+// These goroutines handle the index checking logic and call the provided
+// Handler function when there is data in the buffer available for it to
+// process.
+func (o *inputOrbiter) Start() {
+	go o.run()
 }
 
 // GetMessage returns the message at the given address in the buffer.
@@ -375,4 +389,69 @@ func (o *inputOrbiter) SetUnmarshallerIndex(i uint64) error {
 // a valid array index.
 func (o *inputOrbiter) GetUnmarshallerIndex() uint64 {
 	return o.unmarshallerIndex
+}
+
+// runOrbiter starts all the Handler management goroutines.
+func (o *inputOrbiter) run() {
+	o.running = true
+	go o.runReceiver(o.receiverHandler)
+	go o.runHandler(o.journalerHandler, "journaler")
+	go o.runHandler(o.replicatorHandler, "replicator")
+	go o.runHandler(o.unmarshallerHandler, "unmarshaller")
+	go o.runHandler(o.executorHandler, "executor")
+}
+
+// runReceiver processes messages sent to it until the channel is closed.
+func (o *inputOrbiter) runReceiver(h Handler) {
+	var i uint64
+	for msg := range o.receiverBuffer {
+		i = o.GetReceiverIndex()
+		o.buffer[i%o.GetBufferSize()] = &Message{
+			id:         i,
+			marshalled: msg,
+		}
+		h(o, []uint64{i})
+	}
+}
+
+// runHandler loops, calling the Handler when Messages are available to process.
+//
+// TODO gracefully handle Orbiter.Stop(). Currently all handlers stop
+// immediately. Better behaviour would be for Receiver to stop first and the
+// rest of the handlers finish processing anything available to them before
+// stopping. This could be achieved better by the Orbiter.Stop() function
+// closing the channel buffer and the receiver exiting on no more data.
+func (o *inputOrbiter) runHandler(h Handler, t string) {
+	var this, last, i, j uint64
+	for o.running {
+		// Get the current indexes.
+		// this - current index of this Handler
+		// last - highest index that this Handler can process
+		switch t {
+		case "journaler":
+			this = o.GetJournalerIndex()
+			last = o.GetReceiverIndex() - 1
+		case "replicator":
+			this = o.GetReplicatorIndex()
+			last = o.GetJournalerIndex() - 1
+		case "unmarshaller":
+			this = o.GetUnmarshallerIndex()
+			last = o.GetReplicatorIndex() - 1
+		case "executor":
+			this = o.GetExecutorIndex()
+			last = o.GetUnmarshallerIndex() - 1
+		}
+
+		// Check if we can process anything
+		if this < last {
+			// Build list of indexes to process
+			indexes := make([]uint64, last-this)
+			for i, j = this+1, 0; i <= last; i, j = i+1, j+1 {
+				indexes[j] = i
+			}
+
+			// Call the Handler
+			h(o, indexes)
+		}
+	}
 }

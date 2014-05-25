@@ -94,3 +94,25 @@ func TestInputOrbiterReset(t *testing.T) {
 	err := orbiter.Reset(buffer_size)
 	assert.Equal(t, "Cannot reset a running Orbiter", err.Error())
 }
+
+func TestInputOrbiterStart(t *testing.T) {
+	orbiter := NewInputOrbiter(buffer_size, nil, journaler, replicator,
+		unmarshaller, executor)
+	journalerRan, replicatorRan, unmarshallerRan, executorRan =
+		false, false, false, false
+	orbiter.Start()
+
+	// Manually insert a new Message
+	orbiter.buffer[4] = &Message{
+		id:         4,
+		marshalled: []byte("This is a test message"),
+	}
+	orbiter.receiverIndex += 1
+
+	time.Sleep(1 * time.Millisecond)
+
+	assert.Equal(t, true, journalerRan)
+	assert.Equal(t, true, replicatorRan)
+	assert.Equal(t, true, unmarshallerRan)
+	assert.Equal(t, true, executorRan)
+}
