@@ -52,3 +52,8 @@ func TestGetBufferSize(t *testing.T) {
 	orbiter := NewReceiverOrbiter(buffer_size, nil, nil, nil, nil, nil)
 	assert.Equal(t, buffer_size, orbiter.GetBufferSize())
 }
+
+func TestGetExecutorIndex(t *testing.T) {
+	orbiter := NewReceiverOrbiter(buffer_size, nil, nil, nil, nil, nil)
+	assert.Equal(t, uint64(0), orbiter.GetExecutorIndex())
+}
