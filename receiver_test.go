@@ -73,3 +73,55 @@ func TestReceiverOrbiterStart(t *testing.T) {
 	assert.Equal(t, true, unmarshallerRan)
 	assert.Equal(t, true, executorRan)
 }
+
+func TestReceiverOrbiterSetReceiverIndex(t *testing.T) {
+	orbiter := NewReceiverOrbiter(buffer_size, nil, nil, nil, nil, nil)
+	var err error
+	var old uint64
+
+	// Setting to value lower than current index should fail
+	old = orbiter.GetReceiverIndex()
+	err = orbiter.SetReceiverIndex(orbiter.GetReceiverIndex() - 1)
+	assert.Equal(t, "New receiver index cannot be less than current index",
+		err.Error())
+	assert.Equal(t, old, orbiter.GetReceiverIndex())
+
+	// Setting to same value as current should work (although do nothing really)
+	old = orbiter.GetReceiverIndex()
+	err = orbiter.SetReceiverIndex(orbiter.GetReceiverIndex())
+	assert.Equal(t, nil, err)
+	assert.Equal(t, old, orbiter.GetReceiverIndex())
+
+	// Basic incrementing by one (where there is room in front) should work.
+	old = orbiter.GetReceiverIndex()
+	err = orbiter.SetReceiverIndex(old + 1)
+	assert.Equal(t, nil, err)
+	assert.Equal(t, old+1, orbiter.GetReceiverIndex())
+
+	// Wrapping around should work, even though new modulus of index is lower
+	// than the index of the consumer in front of it.
+	orbiter.Reset(5)
+	assert.Equal(t, uint64(1), orbiter.GetExecutorIndex())
+	err = orbiter.SetReceiverIndex(buffer_size)
+	assert.Equal(t, nil, err)
+	assert.Equal(t, buffer_size, orbiter.GetReceiverIndex())
+
+	// Wrapping around and setting index to the same location as the Business
+	// Logic Consumer should not work.
+	orbiter.Reset(5)
+	assert.Equal(t, uint64(1), orbiter.GetExecutorIndex())
+	old = orbiter.GetReceiverIndex()
+	err = orbiter.SetReceiverIndex(buffer_size + 1)
+	assert.Equal(t, "The Receiver Consumer cannot pass the Business Logic "+
+		"Consumer", err.Error())
+	assert.Equal(t, old, orbiter.GetReceiverIndex())
+
+	// Wrapping around and passing the Business Logic Consumer should not work.
+	orbiter.Reset(5)
+	assert.Equal(t, uint64(1), orbiter.GetExecutorIndex())
+	old = orbiter.GetReceiverIndex()
+	err = orbiter.SetReceiverIndex(buffer_size + (buffer_size / 2))
+	assert.Equal(t, "The Receiver Consumer cannot pass the Business Logic "+
+		"Consumer", err.Error())
+	assert.Equal(t, old, orbiter.GetReceiverIndex())
+}

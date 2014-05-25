@@ -137,9 +137,9 @@ func (o *inputOrbiter) SetReceiverIndex(i uint64) error {
 	if i < o.GetReceiverIndex() {
 		return errors.New("New receiver index cannot be less than current " +
 			"index")
-	} else if i > o.GetExecutorIndex()-1 {
-		return errors.New("New receiver index cannot be greater than the " +
-			"current executor index")
+	} else if i >= o.GetExecutorIndex()+o.GetBufferSize() {
+		return errors.New("The Receiver Consumer cannot pass the Business " +
+			"Logic Consumer")
 	}
 
 	o.receiverIndex = i
