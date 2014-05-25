@@ -47,3 +47,8 @@ func TestGetMessage(t *testing.T) {
 	msg = orbiter.GetMessage(1 + buffer_size)
 	assert.Equal(t, msg.marshalled, []byte(test+string(1)))
 }
+
+func TestGetBufferSize(t *testing.T) {
+	orbiter := NewReceiverOrbiter(buffer_size, nil, nil, nil, nil, nil)
+	assert.Equal(t, buffer_size, orbiter.GetBufferSize())
+}
