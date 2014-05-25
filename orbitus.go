@@ -11,23 +11,23 @@ import (
 
 // Handler is the Consumer handler function type.
 // Defaults are provided, however it is expected most users will define their
-// own functions. These functions will be called by the Orbiters upon launch
-// and are expected to be long-running processes.
-// It should remember the index of the last item they have processed. It is
+// own functions. It will be called by the Orbiters when new messages are
+// available for processing. It is not expected to be a long-running process.
+//
+// It should remember the index of the last item it has processed. It is the
 // Handler's responsibility to update the corresponding index via the
-// appropriate Orbiter methods.
+// appropriate Orbiter methods once processing of a Message is complete.
 //
 // It is assumed that all objects between the index stored in the Orbiter
 // and the next consumer (backwards). Once this index is set the consumer behind
 // will be allowed to process up to an including the new value.
-// The second parameter is the index that the function should start processing
-// from.
+// The second parameter is an array of indexes for the handler to process.
 //
 // If the consumers current index is equal to the index of the consumer ahead of
-// it the consumer should do wait until this changes before processing any
+// it the consumer should wait until this changes before processing any
 // messages. This state should only really ever happen on startup or reset, but
 // it is safe practice for the system in any case.
-type Handler func(Orbiter, uint64)
+type Handler func(*Orbiter, []uint64)
 
 // Message is the object that is stored in the Orbiter ring buffer.
 // Each consumer must only have write access to a single field.
@@ -108,8 +108,11 @@ type OutputOrbiter struct {
 }
 
 // NewInputOrbiter initializes a new InputOrbiter.
-// All indexes are set to 0 and handlers are assigned.
+//
+// All indexes are set to 0 and Handlers are assigned.
+//
 // Space for the buffer is allocated and is filled with empty Message objects.
+//
 // It returns a pointer to the initialized InputOrbiter.
 func NewInputOrbiter(
 	size uint64,
