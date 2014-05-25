@@ -125,3 +125,44 @@ func TestReceiverOrbiterSetReceiverIndex(t *testing.T) {
 		"Consumer", err.Error())
 	assert.Equal(t, old, orbiter.GetReceiverIndex())
 }
+
+func TestReceiverOrbiterSetJournalerIndex(t *testing.T) {
+	orbiter := NewReceiverOrbiter(buffer_size, nil, nil, nil, nil, nil)
+	var err error
+	var old uint64
+
+	// Setting to value lower than current index should fail
+	old = orbiter.GetJournalerIndex()
+	err = orbiter.SetJournalerIndex(orbiter.GetJournalerIndex() - 1)
+	assert.Equal(t, "New journaler index cannot be less than current index",
+		err.Error())
+	assert.Equal(t, old, orbiter.GetJournalerIndex())
+
+	// Setting to same value as current should work (although do nothing really)
+	old = orbiter.GetJournalerIndex()
+	err = orbiter.SetJournalerIndex(orbiter.GetJournalerIndex())
+	assert.Equal(t, nil, err)
+	assert.Equal(t, old, orbiter.GetJournalerIndex())
+
+	// Basic incrementing by one (where there is room in front) should work.
+	orbiter.SetReceiverIndex(orbiter.GetReceiverIndex() + 1)
+	old = orbiter.GetJournalerIndex()
+	err = orbiter.SetJournalerIndex(old + 1)
+	assert.Equal(t, nil, err)
+	assert.Equal(t, old+1, orbiter.GetJournalerIndex())
+
+	// Setting index to the same as the Receiver Consumer should not work.
+	old = orbiter.GetJournalerIndex()
+	err = orbiter.SetJournalerIndex(orbiter.GetReceiverIndex())
+	assert.Equal(t, "New journaler index cannot be greater than the current "+
+		"receiver index", err.Error())
+	assert.Equal(t, old, orbiter.GetJournalerIndex())
+
+	// Padding the Receiver Consumer should not work
+	old = orbiter.GetJournalerIndex()
+	err = orbiter.SetJournalerIndex(orbiter.GetReceiverIndex() +
+		orbiter.GetBufferSize() - 1)
+	assert.Equal(t, "New journaler index cannot be greater than the current "+
+		"receiver index", err.Error())
+	assert.Equal(t, old, orbiter.GetJournalerIndex())
+}
