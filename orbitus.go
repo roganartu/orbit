@@ -50,14 +50,37 @@ type Message struct {
 	output interface{}
 }
 
+type Orbiter interface {
+	// Start the Orbiter.
+	// Launches goroutines and opens communication channel to start
+	// receiving messages on.
+	Start()
+
+	// Reset the Orbiter to a given index.
+	// Cannot be called while Orbiter is running. Stop with
+	// Orbiter.Stop() before resetting.
+	Reset(i uint64)
+
+	// Gets a pointer to the message at a given index.
+	// Wraps around the ring buffer if necessary.
+	GetMessage(i uint64) *Message
+
+	// Get size of buffer
+	GetBufferSize() uint64
+
+	// Get current index of Business Logic Consumer
+	GetExecutorIndex() uint64
+}
+
 // Orbiter maintains a buffer and Business Logic Consumer handler.
+//
 // It is included in both InputOrbiter and OutputOrbiter.
 //
 // In both the InputOrbiter and OutputOrbiter objects the consumers are
 // defined in the order they will be in the ring buffer, with the exception
 // of the Business Logic Consumer which is last in the InputOrbiter and first
 // in the OutputOrbiter.
-type Orbiter struct {
+type orbiter struct {
 	// The actual buffer
 	buffer []*Message
 
@@ -75,7 +98,7 @@ type Orbiter struct {
 
 // InputOrbiter unmarshals messages and coordinates journalling and replication.
 type InputOrbiter struct {
-	Orbiter
+	orbiter
 
 	// Receiver
 	receiverIndex   uint64
@@ -96,7 +119,7 @@ type InputOrbiter struct {
 
 // OutputOrbiter marshals Business Logic Consumer output and sends it to clients.
 type OutputOrbiter struct {
-	Orbiter
+	orbiter
 
 	// Marshaller
 	marshallerIndex   uint64
@@ -137,7 +160,7 @@ func NewInputOrbiter(
 		unmarshallerHandler: unmarshaller,
 
 		// Allocate the buffer
-		Orbiter: Orbiter{
+		orbiter: orbiter{
 			buffer_size:     size,
 			buffer:          make([]*Message, size),
 			executorHandler: executor,
@@ -182,7 +205,7 @@ func (o *InputOrbiter) Reset(i uint64) error {
 //
 // If the provided index is larger than the buffer size then the modulus is
 // used to generate an index that is in range.
-func (o *Orbiter) GetMessage(i uint64) *Message {
+func (o *orbiter) GetMessage(i uint64) *Message {
 	// Bounds check
 	if i >= o.buffer_size {
 		i = i % o.buffer_size
@@ -192,14 +215,14 @@ func (o *Orbiter) GetMessage(i uint64) *Message {
 }
 
 // GetBufferSize returns the size of the Orbiter's Message buffer array.
-func (o *Orbiter) GetBufferSize() uint64 {
+func (o *orbiter) GetBufferSize() uint64 {
 	return o.buffer_size
 }
 
 // GetExecutorIndex returns the Orbiter's current executorIndex.
 // This index may be larger than the buffer size, as the modulus is used to get
 // a valid array index.
-func (o *Orbiter) GetExecutorIndex() uint64 {
+func (o *orbiter) GetExecutorIndex() uint64 {
 	return o.executorIndex
 }
 
