@@ -59,7 +59,7 @@ type Orbiter interface {
 	// Reset the Orbiter to a given index.
 	// Cannot be called while Orbiter is running. Stop with
 	// Orbiter.Stop() before resetting.
-	Reset(i uint64)
+	Reset(i uint64) error
 
 	// Gets a pointer to the message at a given index.
 	// Wraps around the ring buffer if necessary.
