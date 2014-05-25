@@ -3,23 +3,52 @@ package orbitus
 import (
 	"github.com/bmizerany/assert"
 	"testing"
+	"time"
 )
 
 var (
-	buffer_size uint64 = 256 // 2^8
-	test               = "Test string"
+	buffer_size  uint64 = 256 // 2^8
+	test                = "Test string"
+	journalerRan        = false
+	journaler           = func(o Orbiter, ids []uint64) {
+		journalerRan = true
+		if orb, ok := o.(InputOrbiter); ok {
+			orb.SetJournalerIndex(ids[0])
+		}
+	}
+	replicatorRan = false
+	replicator    = func(o Orbiter, ids []uint64) {
+		replicatorRan = true
+		if orb, ok := o.(InputOrbiter); ok {
+			orb.SetReplicatorIndex(ids[0])
+		}
+	}
+	unmarshallerRan = false
+	unmarshaller    = func(o Orbiter, ids []uint64) {
+		unmarshallerRan = true
+		if orb, ok := o.(InputOrbiter); ok {
+			orb.SetUnmarshallerIndex(ids[0])
+		}
+	}
+	executorRan = false
+	executor    = func(o Orbiter, ids []uint64) {
+		executorRan = true
+		if orb, ok := o.(InputOrbiter); ok {
+			orb.SetExecutorIndex(ids[0])
+		}
+	}
 )
 
 func TestNewInputOrbiter(t *testing.T) {
 	orbiter := NewInputOrbiter(buffer_size, nil, nil, nil, nil, nil)
-	var i uint64 = 0
+	var i uint64 = 4
 
 	// Ensure all the indexes are initialized to zero
 	assert.Equal(t, i, orbiter.GetReceiverIndex())
-	assert.Equal(t, i, orbiter.GetJournalerIndex())
-	assert.Equal(t, i, orbiter.GetReplicatorIndex())
-	assert.Equal(t, i, orbiter.GetUnmarshallerIndex())
-	assert.Equal(t, i, orbiter.GetExecutorIndex())
+	assert.Equal(t, i-1, orbiter.GetJournalerIndex())
+	assert.Equal(t, i-2, orbiter.GetReplicatorIndex())
+	assert.Equal(t, i-3, orbiter.GetUnmarshallerIndex())
+	assert.Equal(t, i-4, orbiter.GetExecutorIndex())
 
 	// Ensure buffer has been fully allocated
 	for i = 0; i < buffer_size; i++ {
@@ -54,10 +83,10 @@ func TestInputOrbiterReset(t *testing.T) {
 
 		// Ensure all indexes have been set to the given value
 		assert.Equal(t, i, orbiter.GetReceiverIndex())
-		assert.Equal(t, i, orbiter.GetJournalerIndex())
-		assert.Equal(t, i, orbiter.GetReplicatorIndex())
-		assert.Equal(t, i, orbiter.GetUnmarshallerIndex())
-		assert.Equal(t, i, orbiter.GetExecutorIndex())
+		assert.Equal(t, i-1, orbiter.GetJournalerIndex())
+		assert.Equal(t, i-2, orbiter.GetReplicatorIndex())
+		assert.Equal(t, i-3, orbiter.GetUnmarshallerIndex())
+		assert.Equal(t, i-4, orbiter.GetExecutorIndex())
 	}
 
 	// Ensure orbiter does not reset if running

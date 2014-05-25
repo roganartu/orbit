@@ -27,7 +27,7 @@ import (
 // it the consumer should wait until this changes before processing any
 // messages. This state should only really ever happen on startup or reset, but
 // it is safe practice for the system in any case.
-type Handler func(*Orbiter, []uint64)
+type Handler func(Orbiter, []uint64)
 
 // Message is the object that is stored in the Orbiter ring buffer.
 // Each consumer must only have write access to a single field.
@@ -72,14 +72,39 @@ type Orbiter interface {
 	GetExecutorIndex() uint64
 }
 
+type InputOrbiter interface {
+	// Set the receiver index to the given value
+	SetReceiverIndex(uint64) error
+	// Get current index of the receiver
+	GetReceiverIndex() uint64
+
+	// Set the journaler index to the given value
+	SetJournalerIndex(uint64) error
+	// Get current index of the journaler
+	GetJournalerIndex() uint64
+
+	// Set the replicator index to the given value
+	SetReplicatorIndex(uint64) error
+	// Get current index of the replicator
+	GetReplicatorIndex() uint64
+
+	// Set the unmarshaller index to the given value
+	SetUnmarshallerIndex(uint64) error
+	// Get current index of the unmarshaller
+	GetUnmarshallerIndex() uint64
+
+	// Set index of Business Logic Consumer to the given value
+	SetExecutorIndex(uint64) error
+}
+
 // Orbiter maintains a buffer and Business Logic Consumer handler.
 //
-// It is included in both InputOrbiter and OutputOrbiter.
+// It is included in both inputOrbiter and outputOrbiter.
 //
-// In both the InputOrbiter and OutputOrbiter objects the consumers are
+// In both the inputOrbiter and outputOrbiter objects the consumers are
 // defined in the order they will be in the ring buffer, with the exception
-// of the Business Logic Consumer which is last in the InputOrbiter and first
-// in the OutputOrbiter.
+// of the Business Logic Consumer which is last in the inputOrbiter and first
+// in the outputOrbiter.
 type orbiter struct {
 	// The actual buffer
 	buffer []*Message
@@ -96,8 +121,8 @@ type orbiter struct {
 	running bool
 }
 
-// InputOrbiter unmarshals messages and coordinates journalling and replication.
-type InputOrbiter struct {
+// inputOrbiter unmarshals messages and coordinates journalling and replication.
+type inputOrbiter struct {
 	orbiter
 
 	// Receiver
@@ -117,8 +142,8 @@ type InputOrbiter struct {
 	unmarshallerHandler Handler
 }
 
-// OutputOrbiter marshals Business Logic Consumer output and sends it to clients.
-type OutputOrbiter struct {
+// outputOrbiter marshals Business Logic Consumer output and sends it to clients.
+type outputOrbiter struct {
 	orbiter
 
 	// Marshaller
@@ -130,13 +155,13 @@ type OutputOrbiter struct {
 	publisherHandler Handler
 }
 
-// NewInputOrbiter initializes a new InputOrbiter.
+// NewInputOrbiter initializes a new inputOrbiter.
 //
 // All indexes are set to 0 and Handlers are assigned.
 //
 // Space for the buffer is allocated and is filled with empty Message objects.
 //
-// It returns a pointer to the initialized InputOrbiter.
+// It returns a pointer to the initialized inputOrbiter.
 func NewInputOrbiter(
 	size uint64,
 	receiver Handler,
@@ -144,15 +169,8 @@ func NewInputOrbiter(
 	replicator Handler,
 	unmarshaller Handler,
 	executor Handler,
-) *InputOrbiter {
-	orbiter := &InputOrbiter{
-		// All the indexes start at zero. The consumers should do nothing in the
-		// case that their index is the same as the consumer ahead of them.
-		receiverIndex:     0,
-		journalerIndex:    0,
-		replicatorIndex:   0,
-		unmarshallerIndex: 0,
-
+) *inputOrbiter {
+	orbiter := &inputOrbiter{
 		// Handlers
 		receiverHandler:     receiver,
 		journalerHandler:    journaler,
@@ -169,6 +187,8 @@ func NewInputOrbiter(
 			running: false,
 		},
 	}
+	// Start at index 4 so we don't have index underflow
+	orbiter.Reset(4)
 
 	// Create 'size' new Message objects and store them in the buffer
 	var i uint64
