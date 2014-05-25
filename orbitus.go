@@ -206,17 +206,18 @@ func NewInputOrbiter(
 //
 // Returns an error if called while Orbiter is running. Stop Orbiter with
 // Orbiter.Stop() before resetting.
-func (o *InputOrbiter) Reset(i uint64) error {
+func (o *inputOrbiter) Reset(i uint64) error {
 	if o.running {
 		return errors.New("Cannot reset a running Orbiter")
 	}
 
 	// Bypass the setters otherwise their sanity checks will error
+	//
 	o.receiverIndex = i
-	o.journalerIndex = i
-	o.replicatorIndex = i
-	o.unmarshallerIndex = i
-	o.executorIndex = i
+	o.journalerIndex = i - 1
+	o.replicatorIndex = i - 2
+	o.unmarshallerIndex = i - 3
+	o.executorIndex = i - 4
 
 	return nil
 }
