@@ -239,6 +239,26 @@ func (o *orbiter) GetBufferSize() uint64 {
 	return o.buffer_size
 }
 
+// SetExecutorIndex sets the inputOrbiter's executorIndex to the given value.
+//
+// The provided value is checked to ensure that it is within acceptable bounds.
+// Specifically, it cannot be less than the current index or greater than the
+// current unmarshallerIndex.
+//
+// If the above rules are broken an error is returned, else nil.
+func (o *inputOrbiter) SetExecutorIndex(i uint64) error {
+	if i < o.GetExecutorIndex() {
+		return errors.New("New executor index cannot be less than current " +
+			"index")
+	} else if i > o.GetUnmarshallerIndex()-1 {
+		return errors.New("New executor index cannot be greater than the " +
+			"current unmarshaller index")
+	}
+
+	o.executorIndex = i
+	return nil
+}
+
 // GetExecutorIndex returns the Orbiter's current executorIndex.
 // This index may be larger than the buffer size, as the modulus is used to get
 // a valid array index.
@@ -246,30 +266,112 @@ func (o *orbiter) GetExecutorIndex() uint64 {
 	return o.executorIndex
 }
 
-// GetReceiverIndex returns the InputOrbiter's current receiverIndex.
+// SetReceiverindex sets the inputOrbiter's receiverIndex to the given value.
+//
+// The provided value is checked to ensure that it is within acceptable bounds.
+// Specifically, it cannot be less than the current index or greater than the
+// current executorIndex.
+//
+// If the above rules are broken an error is returned, else nil.
+func (o *inputOrbiter) SetReceiverIndex(i uint64) error {
+	if i < o.GetReceiverIndex() {
+		return errors.New("New receiver index cannot be less than current " +
+			"index")
+	} else if i > o.GetExecutorIndex()-1 {
+		return errors.New("New receiver index cannot be greater than the " +
+			"current executor index")
+	}
+
+	o.receiverIndex = i
+	return nil
+}
+
+// GetReceiverIndex returns the inputOrbiter's current receiverIndex.
 // This index may be larger than the buffer size, as the modulus is used to get
 // a valid array index.
-func (o *InputOrbiter) GetReceiverIndex() uint64 {
+func (o *inputOrbiter) GetReceiverIndex() uint64 {
 	return o.receiverIndex
 }
 
-// GetJournalerIndex returns the InputOrbiter's current journalerIndex.
+// SetJournalerIndex sets the inputOrbiter's journalerIndex to the given value.
+//
+// The provided value is checked to ensure that it is within acceptable bounds.
+// Specifically, it cannot be less than the current index or greater than the
+// current receiverIndex.
+//
+// If the above rules are broken an error is returned, else nil.
+func (o *inputOrbiter) SetJournalerIndex(i uint64) error {
+	if i < o.GetJournalerIndex() {
+		return errors.New("New journaler index cannot be less than current " +
+			"index")
+	} else if i > o.GetReceiverIndex()-1 {
+		return errors.New("New journaler index cannot be greater than the " +
+			"current receiver index")
+	}
+
+	o.journalerIndex = i
+	return nil
+}
+
+// GetJournalerIndex returns the inputOrbiter's current journalerIndex.
 // This index may be larger than the buffer size, as the modulus is used to get
 // a valid array index.
-func (o *InputOrbiter) GetJournalerIndex() uint64 {
+func (o *inputOrbiter) GetJournalerIndex() uint64 {
 	return o.journalerIndex
 }
 
-// GetUnmarshallerIndex returns the InputOrbiter's current unmarshallerIndex.
-// This index may be larger than the buffer size, as the modulus is used to get
-// a valid array index.
-func (o *InputOrbiter) GetUnmarshallerIndex() uint64 {
-	return o.unmarshallerIndex
+// SetReplicatorIndex sets the inputOrbiter's replicatorIndex to the given
+// value.
+//
+// The provided value is checked to ensure that it is within acceptable bounds.
+// Specifically, it cannot be less than the current index or greater than the
+// current journalerIndex.
+//
+// If the above rules are broken an error is returned, else nil.
+func (o *inputOrbiter) SetReplicatorIndex(i uint64) error {
+	if i < o.GetReplicatorIndex() {
+		return errors.New("New replicator index cannot be less than current " +
+			"index")
+	} else if i > o.GetJournalerIndex()-1 {
+		return errors.New("New replicator index cannot be greater than the " +
+			"current journaler index")
+	}
+
+	o.replicatorIndex = i
+	return nil
 }
 
-// GetReplicatorIndex returns the InputOrbiter's current replicatorIndex.
+// GetReplicatorIndex returns the inputOrbiter's current replicatorIndex.
 // This index may be larger than the buffer size, as the modulus is used to get
 // a valid array index.
-func (o *InputOrbiter) GetReplicatorIndex() uint64 {
+func (o *inputOrbiter) GetReplicatorIndex() uint64 {
 	return o.replicatorIndex
+}
+
+// SetUnmarshallerIndex sets the inputOrbiter's unmarshallerIndex to the given
+// value.
+//
+// The provided value is checked to ensure that it is within acceptable bounds.
+// Specifically, it cannot be less than the current index or greater than the
+// current replicatorIndex.
+//
+// If the above rules are broken an error is returned, else nil.
+func (o *inputOrbiter) SetUnmarshallerIndex(i uint64) error {
+	if i < o.GetUnmarshallerIndex() {
+		return errors.New("New unmarshaller index cannot be less than " +
+			"current index")
+	} else if i > o.GetReplicatorIndex()-1 {
+		return errors.New("New unmarshaller index cannot be greater than the " +
+			"current replicator index")
+	}
+
+	o.unmarshallerIndex = i
+	return nil
+}
+
+// GetUnmarshallerIndex returns the inputOrbiter's current unmarshallerIndex.
+// This index may be larger than the buffer size, as the modulus is used to get
+// a valid array index.
+func (o *inputOrbiter) GetUnmarshallerIndex() uint64 {
+	return o.unmarshallerIndex
 }
