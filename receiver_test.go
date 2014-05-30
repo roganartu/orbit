@@ -208,3 +208,46 @@ func TestReceiverOrbiterSetReplicatorIndex(t *testing.T) {
 		"journaler index", err.Error())
 	assert.Equal(t, old, orbiter.GetReplicatorIndex())
 }
+
+func TestReceiverOrbiterSetUnmarshallerIndex(t *testing.T) {
+	orbiter := NewReceiverOrbiter(buffer_size, nil, nil, nil, nil, nil)
+	var err error
+	var old uint64
+
+	// Setting to value lower than current index should fail
+	old = orbiter.GetUnmarshallerIndex()
+	err = orbiter.SetUnmarshallerIndex(old - 1)
+	assert.Equal(t, "New unmarshaller index cannot be less than current index",
+		err.Error())
+	assert.Equal(t, old, orbiter.GetUnmarshallerIndex())
+
+	// Setting to same value as current should work (although do nothing really)
+	old = orbiter.GetUnmarshallerIndex()
+	err = orbiter.SetUnmarshallerIndex(old)
+	assert.Equal(t, nil, err)
+	assert.Equal(t, old, orbiter.GetUnmarshallerIndex())
+
+	// Basic incrementing by one (where there is room in front) should work.
+	orbiter.SetReceiverIndex(orbiter.GetReceiverIndex() + 1)
+	orbiter.SetJournalerIndex(orbiter.GetJournalerIndex() + 1)
+	orbiter.SetReplicatorIndex(orbiter.GetReplicatorIndex() + 1)
+	old = orbiter.GetUnmarshallerIndex()
+	err = orbiter.SetUnmarshallerIndex(old + 1)
+	assert.Equal(t, nil, err)
+	assert.Equal(t, old+1, orbiter.GetUnmarshallerIndex())
+
+	// Setting index to the same as the Replicator Consumer should not work.
+	old = orbiter.GetUnmarshallerIndex()
+	err = orbiter.SetUnmarshallerIndex(orbiter.GetReplicatorIndex())
+	assert.Equal(t, "New unmarshaller index cannot be greater than the current "+
+		"replicator index", err.Error())
+	assert.Equal(t, old, orbiter.GetUnmarshallerIndex())
+
+	// Passing the Replicator Consumer should not work
+	old = orbiter.GetUnmarshallerIndex()
+	err = orbiter.SetUnmarshallerIndex(orbiter.GetReplicatorIndex() +
+		orbiter.GetBufferSize() - 1)
+	assert.Equal(t, "New unmarshaller index cannot be greater than the current "+
+		"replicator index", err.Error())
+	assert.Equal(t, old, orbiter.GetUnmarshallerIndex())
+}
