@@ -6,10 +6,18 @@ import (
 )
 
 var (
-	buffer_size  uint64 = 256 // 2^8
-	test                = "Test string"
-	journalerRan        = false
-	journaler           = func(o Orbiter, ids []uint64) {
+	buffer_size uint64 = 256 // 2^8
+	test               = "Test string"
+
+	receiverRan = false
+	receiver    = func(o Orbiter, ids []uint64) {
+		receiverRan = true
+		if orb, ok := o.(ReceiverOrbiter); ok {
+			orb.SetReceiverIndex(ids[0] + 1)
+		}
+	}
+	journalerRan = false
+	journaler    = func(o Orbiter, ids []uint64) {
 		journalerRan = true
 		if orb, ok := o.(ReceiverOrbiter); ok {
 			orb.SetJournalerIndex(ids[0])
