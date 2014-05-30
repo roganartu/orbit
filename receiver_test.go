@@ -251,3 +251,48 @@ func TestReceiverOrbiterSetUnmarshallerIndex(t *testing.T) {
 		"replicator index", err.Error())
 	assert.Equal(t, old, orbiter.GetUnmarshallerIndex())
 }
+
+func TestReceiverOrbiterSetExecutorIndex(t *testing.T) {
+	orbiter := NewReceiverOrbiter(buffer_size, nil, nil, nil, nil, nil)
+	orbiter.Reset(5)
+	var err error
+	var old uint64
+
+	// Setting to value lower than current index should fail
+	old = orbiter.GetExecutorIndex()
+	err = orbiter.SetExecutorIndex(old - 1)
+	assert.Equal(t, "New executor index cannot be less than current index",
+		err.Error())
+	assert.Equal(t, old, orbiter.GetExecutorIndex())
+
+	// Setting to same value as current should work (although do nothing really)
+	old = orbiter.GetExecutorIndex()
+	err = orbiter.SetExecutorIndex(old)
+	assert.Equal(t, nil, err)
+	assert.Equal(t, old, orbiter.GetExecutorIndex())
+
+	// Basic incrementing by one (where there is room in front) should work.
+	orbiter.SetReceiverIndex(orbiter.GetReceiverIndex() + 1)
+	orbiter.SetJournalerIndex(orbiter.GetJournalerIndex() + 1)
+	orbiter.SetReplicatorIndex(orbiter.GetReplicatorIndex() + 1)
+	orbiter.SetUnmarshallerIndex(orbiter.GetUnmarshallerIndex() + 1)
+	old = orbiter.GetExecutorIndex()
+	err = orbiter.SetExecutorIndex(old + 1)
+	assert.Equal(t, nil, err)
+	assert.Equal(t, old+1, orbiter.GetExecutorIndex())
+
+	// Setting index to the same as the Unmarshaller Consumer should not work.
+	old = orbiter.GetExecutorIndex()
+	err = orbiter.SetExecutorIndex(orbiter.GetUnmarshallerIndex())
+	assert.Equal(t, "New executor index cannot be greater than the current "+
+		"unmarshaller index", err.Error())
+	assert.Equal(t, old, orbiter.GetExecutorIndex())
+
+	// Passing the Unmarshaller Consumer should not work
+	old = orbiter.GetExecutorIndex()
+	err = orbiter.SetExecutorIndex(orbiter.GetUnmarshallerIndex() +
+		orbiter.GetBufferSize() - 1)
+	assert.Equal(t, "New executor index cannot be greater than the current "+
+		"unmarshaller index", err.Error())
+	assert.Equal(t, old, orbiter.GetExecutorIndex())
+}
