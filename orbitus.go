@@ -64,30 +64,22 @@ type Orbiter interface {
 	// Get size of buffer
 	GetBufferSize() uint64
 
-	// Get current index of Business Logic Consumer
-	GetExecutorIndex() uint64
+	// Get current index of the given Consumer
+	GetIndex(int) uint64
 }
 
 type ReceiverOrbiter interface {
 	// Set the receiver index to the given value
 	SetReceiverIndex(uint64) error
-	// Get current index of the receiver
-	GetReceiverIndex() uint64
 
 	// Set the journaler index to the given value
 	SetJournalerIndex(uint64) error
-	// Get current index of the journaler
-	GetJournalerIndex() uint64
 
 	// Set the replicator index to the given value
 	SetReplicatorIndex(uint64) error
-	// Get current index of the replicator
-	GetReplicatorIndex() uint64
 
 	// Set the unmarshaller index to the given value
 	SetUnmarshallerIndex(uint64) error
-	// Get current index of the unmarshaller
-	GetUnmarshallerIndex() uint64
 
 	// Set index of Business Logic Consumer to the given value
 	SetExecutorIndex(uint64) error
@@ -109,9 +101,10 @@ type orbiter struct {
 	// Must be a power of 2
 	buffer_size uint64
 
-	// Business Logic Consumer
-	executorIndex   uint64
-	executorHandler Handler
+	// Indexes, handlers and channels for all consumers
+	index   []uint64
+	handler []Handler
+	channel []chan int
 
 	// Flag to indicate whether Orbiter is running
 	running bool
@@ -146,11 +139,4 @@ func (o *orbiter) GetMessage(i uint64) *Message {
 // GetBufferSize returns the size of the Orbiter's Message buffer array.
 func (o *orbiter) GetBufferSize() uint64 {
 	return o.buffer_size
-}
-
-// GetExecutorIndex returns the Orbiter's current executorIndex.
-// This index may be larger than the buffer size, as the modulus is used to get
-// a valid array index.
-func (o *orbiter) GetExecutorIndex() uint64 {
-	return o.executorIndex
 }

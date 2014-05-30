@@ -4,26 +4,20 @@ import (
 	"errors"
 )
 
+const (
+	RECEIVER     = iota
+	JOURNALER    = iota
+	REPLICATOR   = iota
+	UNMARSHALLER = iota
+	EXECUTOR     = iota
+)
+
 // inputOrbiter unmarshals messages and coordinates journalling and replication.
 type inputOrbiter struct {
 	orbiter
 
-	// Receiver
-	receiverIndex   uint64
-	receiverHandler Handler
-	receiverBuffer  chan []byte
-
-	// Journaler
-	journalerIndex   uint64
-	journalerHandler Handler
-
-	// Replicator
-	replicatorIndex   uint64
-	replicatorHandler Handler
-
-	// Unmarshaller
-	unmarshallerIndex   uint64
-	unmarshallerHandler Handler
+	// Receiver message buffer
+	receiverBuffer chan []byte
 }
 
 // NewReceiverOrbiter initializes a new inputOrbiter.
@@ -42,25 +36,30 @@ func NewReceiverOrbiter(
 	executor Handler,
 ) *inputOrbiter {
 	orbiter := &inputOrbiter{
-		// Handlers
-		receiverHandler:     receiver,
-		journalerHandler:    journaler,
-		replicatorHandler:   replicator,
-		unmarshallerHandler: unmarshaller,
-
 		// Allocate the buffer
 		orbiter: orbiter{
-			buffer_size:     size,
-			buffer:          make([]*Message, size),
-			executorHandler: executor,
+			buffer_size: size,
+			buffer:      make([]*Message, size),
 
 			// Start in stopped state
 			running: false,
+
+			// Create handler and index arrays
+			handler: make([]Handler, 5),
+			index:   make([]uint64, 5),
+			channel: make([]chan int, 5),
 		},
 
 		// Create the channel for the receiverBuffer
 		receiverBuffer: make(chan []byte, 4096),
 	}
+	// Assign Handlers
+	orbiter.handler[RECEIVER] = receiver
+	orbiter.handler[JOURNALER] = journaler
+	orbiter.handler[REPLICATOR] = replicator
+	orbiter.handler[UNMARSHALLER] = unmarshaller
+	orbiter.handler[EXECUTOR] = executor
+
 	// Start at index 4 so we don't have index underflow
 	orbiter.Reset(4)
 
@@ -86,12 +85,11 @@ func (o *inputOrbiter) Reset(i uint64) error {
 	}
 
 	// Bypass the setters otherwise their sanity checks will error
-	//
-	o.receiverIndex = i
-	o.journalerIndex = i - 1
-	o.replicatorIndex = i - 2
-	o.unmarshallerIndex = i - 3
-	o.executorIndex = i - 4
+	var j uint64
+	for j = 0; j <= EXECUTOR; j++ {
+		// The first item in index should be first in the buffer
+		o.index[j] = i - j
+	}
 
 	return nil
 }
@@ -103,7 +101,31 @@ func (o *inputOrbiter) Reset(i uint64) error {
 // Handler function when there is data in the buffer available for it to
 // process.
 func (o *inputOrbiter) Start() {
+	// Allocate channels
+	for i := range o.channel {
+		o.channel[i] = make(chan int)
+	}
+
 	go o.run()
+}
+
+// Stop stops the Orbiter processing.
+// It closes the input stream and then closes all channels, effectively
+// killing all goroutines.
+func (o *inputOrbiter) Stop() {
+	o.running = false
+	for i := 0; i <= EXECUTOR; i++ {
+		close(o.channel[i])
+	}
+}
+
+// GetIndex returns the inputOrbiter's current index for the provided Consumer.
+// This index may be larger than the buffer size, as the modulus is used to get
+// a valid array index.
+//
+// h is the handler to fetch the index for.
+func (o *inputOrbiter) GetIndex(h int) uint64 {
+	return o.index[h]
 }
 
 // SetExecutorIndex sets the inputOrbiter's executorIndex to the given value.
@@ -114,15 +136,15 @@ func (o *inputOrbiter) Start() {
 //
 // If the above rules are broken an error is returned, else nil.
 func (o *inputOrbiter) SetExecutorIndex(i uint64) error {
-	if i < o.GetExecutorIndex() {
+	if i < o.GetIndex(EXECUTOR) {
 		return errors.New("New executor index cannot be less than current " +
 			"index")
-	} else if i > o.GetUnmarshallerIndex()-1 {
+	} else if i > o.GetIndex(UNMARSHALLER)-1 {
 		return errors.New("New executor index cannot be greater than the " +
 			"current unmarshaller index")
 	}
 
-	o.executorIndex = i
+	o.index[EXECUTOR] = i
 	return nil
 }
 
@@ -134,23 +156,16 @@ func (o *inputOrbiter) SetExecutorIndex(i uint64) error {
 //
 // If the above rules are broken an error is returned, else nil.
 func (o *inputOrbiter) SetReceiverIndex(i uint64) error {
-	if i < o.GetReceiverIndex() {
+	if i < o.GetIndex(RECEIVER) {
 		return errors.New("New receiver index cannot be less than current " +
 			"index")
-	} else if i >= o.GetExecutorIndex()+o.GetBufferSize() {
+	} else if i >= o.GetIndex(EXECUTOR)+o.GetBufferSize() {
 		return errors.New("The Receiver Consumer cannot pass the Business " +
 			"Logic Consumer")
 	}
 
-	o.receiverIndex = i
+	o.index[RECEIVER] = i
 	return nil
-}
-
-// GetReceiverIndex returns the inputOrbiter's current receiverIndex.
-// This index may be larger than the buffer size, as the modulus is used to get
-// a valid array index.
-func (o *inputOrbiter) GetReceiverIndex() uint64 {
-	return o.receiverIndex
 }
 
 // SetJournalerIndex sets the inputOrbiter's journalerIndex to the given value.
@@ -161,23 +176,16 @@ func (o *inputOrbiter) GetReceiverIndex() uint64 {
 //
 // If the above rules are broken an error is returned, else nil.
 func (o *inputOrbiter) SetJournalerIndex(i uint64) error {
-	if i < o.GetJournalerIndex() {
+	if i < o.GetIndex(JOURNALER) {
 		return errors.New("New journaler index cannot be less than current " +
 			"index")
-	} else if i > o.GetReceiverIndex()-1 {
+	} else if i > o.GetIndex(RECEIVER)-1 {
 		return errors.New("New journaler index cannot be greater than the " +
 			"current receiver index")
 	}
 
-	o.journalerIndex = i
+	o.index[JOURNALER] = i
 	return nil
-}
-
-// GetJournalerIndex returns the inputOrbiter's current journalerIndex.
-// This index may be larger than the buffer size, as the modulus is used to get
-// a valid array index.
-func (o *inputOrbiter) GetJournalerIndex() uint64 {
-	return o.journalerIndex
 }
 
 // SetReplicatorIndex sets the inputOrbiter's replicatorIndex to the given
@@ -189,23 +197,16 @@ func (o *inputOrbiter) GetJournalerIndex() uint64 {
 //
 // If the above rules are broken an error is returned, else nil.
 func (o *inputOrbiter) SetReplicatorIndex(i uint64) error {
-	if i < o.GetReplicatorIndex() {
+	if i < o.GetIndex(REPLICATOR) {
 		return errors.New("New replicator index cannot be less than current " +
 			"index")
-	} else if i > o.GetJournalerIndex()-1 {
+	} else if i > o.GetIndex(JOURNALER)-1 {
 		return errors.New("New replicator index cannot be greater than the " +
 			"current journaler index")
 	}
 
-	o.replicatorIndex = i
+	o.index[REPLICATOR] = i
 	return nil
-}
-
-// GetReplicatorIndex returns the inputOrbiter's current replicatorIndex.
-// This index may be larger than the buffer size, as the modulus is used to get
-// a valid array index.
-func (o *inputOrbiter) GetReplicatorIndex() uint64 {
-	return o.replicatorIndex
 }
 
 // SetUnmarshallerIndex sets the inputOrbiter's unmarshallerIndex to the given
@@ -217,40 +218,34 @@ func (o *inputOrbiter) GetReplicatorIndex() uint64 {
 //
 // If the above rules are broken an error is returned, else nil.
 func (o *inputOrbiter) SetUnmarshallerIndex(i uint64) error {
-	if i < o.GetUnmarshallerIndex() {
+	if i < o.GetIndex(UNMARSHALLER) {
 		return errors.New("New unmarshaller index cannot be less than " +
 			"current index")
-	} else if i > o.GetReplicatorIndex()-1 {
+	} else if i > o.GetIndex(REPLICATOR)-1 {
 		return errors.New("New unmarshaller index cannot be greater than the " +
 			"current replicator index")
 	}
 
-	o.unmarshallerIndex = i
+	o.index[UNMARSHALLER] = i
 	return nil
-}
-
-// GetUnmarshallerIndex returns the inputOrbiter's current unmarshallerIndex.
-// This index may be larger than the buffer size, as the modulus is used to get
-// a valid array index.
-func (o *inputOrbiter) GetUnmarshallerIndex() uint64 {
-	return o.unmarshallerIndex
 }
 
 // runOrbiter starts all the Handler management goroutines.
 func (o *inputOrbiter) run() {
 	o.running = true
-	go o.runReceiver(o.receiverHandler)
-	go o.runHandler(o.journalerHandler, "journaler")
-	go o.runHandler(o.replicatorHandler, "replicator")
-	go o.runHandler(o.unmarshallerHandler, "unmarshaller")
-	go o.runHandler(o.executorHandler, "executor")
+	go o.runReceiver(o.handler[RECEIVER])
+	go o.runHandler(o.handler[JOURNALER], JOURNALER)
+	go o.runHandler(o.handler[REPLICATOR], REPLICATOR)
+	go o.runHandler(o.handler[UNMARSHALLER], UNMARSHALLER)
+	go o.runHandler(o.handler[EXECUTOR], EXECUTOR)
 }
 
 // runReceiver processes messages sent to it until the channel is closed.
 func (o *inputOrbiter) runReceiver(h Handler) {
 	var i uint64
+	journalChannel := o.channel[RECEIVER+1]
 	for msg := range o.receiverBuffer {
-		i = o.GetReceiverIndex()
+		i = o.GetIndex(RECEIVER)
 
 		// Store message and current index
 		elem := o.buffer[i%o.GetBufferSize()]
@@ -260,6 +255,11 @@ func (o *inputOrbiter) runReceiver(h Handler) {
 		// Run handler
 		if h != nil {
 			h(o, []uint64{i})
+		}
+
+		// Let the next handler know it can proceed
+		if len(journalChannel) == 0 {
+			journalChannel <- 1
 		}
 	}
 }
@@ -271,26 +271,15 @@ func (o *inputOrbiter) runReceiver(h Handler) {
 // rest of the handlers finish processing anything available to them before
 // stopping. This could be achieved better by the Orbiter.Stop() function
 // closing the channel buffer and the receiver exiting on no more data.
-func (o *inputOrbiter) runHandler(h Handler, t string) {
+func (o *inputOrbiter) runHandler(h Handler, t int) {
 	var this, last, i, j uint64
-	for o.running {
+	nextChannel := o.channel[(t+1)%(EXECUTOR+1)]
+	for _ = range o.channel[t] {
 		// Get the current indexes.
 		// this - current index of this Handler
 		// last - highest index that this Handler can process
-		switch t {
-		case "journaler":
-			this = o.GetJournalerIndex()
-			last = o.GetReceiverIndex() - 1
-		case "replicator":
-			this = o.GetReplicatorIndex()
-			last = o.GetJournalerIndex() - 1
-		case "unmarshaller":
-			this = o.GetUnmarshallerIndex()
-			last = o.GetReplicatorIndex() - 1
-		case "executor":
-			this = o.GetExecutorIndex()
-			last = o.GetUnmarshallerIndex() - 1
-		}
+		this = o.GetIndex(t)
+		last = o.GetIndex(t-1) - 1
 
 		// Check if we can process anything
 		if this < last {
@@ -301,7 +290,14 @@ func (o *inputOrbiter) runHandler(h Handler, t string) {
 			}
 
 			// Call the Handler
-			h(o, indexes)
+			if h != nil {
+				h(o, indexes)
+			}
+
+			// Let the next handler know it can proceed
+			if len(nextChannel) == 0 && o.running && t != EXECUTOR {
+				nextChannel <- 1
+			}
 		}
 	}
 }
