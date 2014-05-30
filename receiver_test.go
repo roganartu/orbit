@@ -158,7 +158,7 @@ func TestReceiverOrbiterSetJournalerIndex(t *testing.T) {
 		"receiver index", err.Error())
 	assert.Equal(t, old, orbiter.GetJournalerIndex())
 
-	// Padding the Receiver Consumer should not work
+	// Passing the Receiver Consumer should not work
 	old = orbiter.GetJournalerIndex()
 	err = orbiter.SetJournalerIndex(orbiter.GetReceiverIndex() +
 		orbiter.GetBufferSize() - 1)
