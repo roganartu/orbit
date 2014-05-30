@@ -251,11 +251,16 @@ func (o *inputOrbiter) runReceiver(h Handler) {
 	var i uint64
 	for msg := range o.receiverBuffer {
 		i = o.GetReceiverIndex()
-		o.buffer[i%o.GetBufferSize()] = &Message{
-			id:         i,
-			marshalled: msg,
+
+		// Store message and current index
+		elem := o.buffer[i%o.GetBufferSize()]
+		elem.id = i
+		elem.marshalled = msg
+
+		// Run handler
+		if h != nil {
+			h(o, []uint64{i})
 		}
-		h(o, []uint64{i})
 	}
 }
 
