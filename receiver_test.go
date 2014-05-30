@@ -166,3 +166,45 @@ func TestReceiverOrbiterSetJournalerIndex(t *testing.T) {
 		"receiver index", err.Error())
 	assert.Equal(t, old, orbiter.GetJournalerIndex())
 }
+
+func TestReceiverOrbiterSetReplicatorIndex(t *testing.T) {
+	orbiter := NewReceiverOrbiter(buffer_size, nil, nil, nil, nil, nil)
+	var err error
+	var old uint64
+
+	// Setting to value lower than current index should fail
+	old = orbiter.GetReplicatorIndex()
+	err = orbiter.SetReplicatorIndex(old - 1)
+	assert.Equal(t, "New replicator index cannot be less than current index",
+		err.Error())
+	assert.Equal(t, old, orbiter.GetReplicatorIndex())
+
+	// Setting to same value as current should work (although do nothing really)
+	old = orbiter.GetReplicatorIndex()
+	err = orbiter.SetReplicatorIndex(old)
+	assert.Equal(t, nil, err)
+	assert.Equal(t, old, orbiter.GetReplicatorIndex())
+
+	// Basic incrementing by one (where there is room in front) should work.
+	orbiter.SetReceiverIndex(orbiter.GetReceiverIndex() + 1)
+	orbiter.SetJournalerIndex(orbiter.GetJournalerIndex() + 1)
+	old = orbiter.GetReplicatorIndex()
+	err = orbiter.SetReplicatorIndex(old + 1)
+	assert.Equal(t, nil, err)
+	assert.Equal(t, old+1, orbiter.GetReplicatorIndex())
+
+	// Setting index to the same as the Journaler Consumer should not work.
+	old = orbiter.GetReplicatorIndex()
+	err = orbiter.SetReplicatorIndex(orbiter.GetJournalerIndex())
+	assert.Equal(t, "New replicator index cannot be greater than the current "+
+		"journaler index", err.Error())
+	assert.Equal(t, old, orbiter.GetReplicatorIndex())
+
+	// Passing the Journaler Consumer should not work
+	old = orbiter.GetReplicatorIndex()
+	err = orbiter.SetReplicatorIndex(orbiter.GetJournalerIndex() +
+		orbiter.GetBufferSize() - 1)
+	assert.Equal(t, "New replicator index cannot be greater than the current "+
+		"journaler index", err.Error())
+	assert.Equal(t, old, orbiter.GetReplicatorIndex())
+}
