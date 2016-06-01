@@ -3,117 +3,10 @@ package orbitus
 import (
 	"github.com/bmizerany/assert"
 	"testing"
-	"time"
 )
 
-var (
-	receiverRan = false
-	receiver    = func(o Orbiter, ids []uint64) {
-		receiverRan = true
-		if orb, ok := o.(ReceiverOrbiter); ok {
-			orb.SetReceiverIndex(ids[0] + 1)
-		}
-	}
-	journalerRan = false
-	journaler    = func(o Orbiter, ids []uint64) {
-		journalerRan = true
-		if orb, ok := o.(ReceiverOrbiter); ok {
-			orb.SetJournalerIndex(ids[0])
-		}
-	}
-	replicatorRan = false
-	replicator    = func(o Orbiter, ids []uint64) {
-		replicatorRan = true
-		if orb, ok := o.(ReceiverOrbiter); ok {
-			orb.SetReplicatorIndex(ids[0])
-		}
-	}
-	unmarshallerRan = false
-	unmarshaller    = func(o Orbiter, ids []uint64) {
-		unmarshallerRan = true
-		if orb, ok := o.(ReceiverOrbiter); ok {
-			orb.SetUnmarshallerIndex(ids[0])
-		}
-	}
-	executorRan = false
-	executor    = func(o Orbiter, ids []uint64) {
-		executorRan = true
-		if orb, ok := o.(ReceiverOrbiter); ok {
-			orb.SetExecutorIndex(ids[0])
-		}
-	}
-)
-
-func TestNewReceiverOrbiter(t *testing.T) {
-	orbiter := NewReceiverOrbiter(buffer_size, nil, nil, nil, nil, nil)
-	var i uint64 = 4
-
-	// Ensure all the indexes are initialized to zero
-	assert.Equal(t, i, orbiter.GetIndex(RECEIVER))
-	assert.Equal(t, i-1, orbiter.GetIndex(JOURNALER))
-	assert.Equal(t, i-2, orbiter.GetIndex(REPLICATOR))
-	assert.Equal(t, i-3, orbiter.GetIndex(UNMARSHALLER))
-	assert.Equal(t, i-4, orbiter.GetIndex(EXECUTOR))
-
-	// Ensure buffer has been fully allocated
-	for i = 0; i < buffer_size; i++ {
-		msg := orbiter.GetMessage(i)
-		msg.marshalled = []byte(test + string(i))
-	}
-
-	for i = 0; i < buffer_size; i++ {
-		msg := orbiter.GetMessage(i)
-		assert.Equal(t, msg.marshalled, []byte(test+string(i)))
-	}
-}
-
-func TestReceiverOrbiterReset(t *testing.T) {
-	orbiter := NewReceiverOrbiter(buffer_size, nil, nil, nil, nil, nil)
-	var i uint64
-	testvals := []uint64{1, buffer_size - 1, buffer_size, buffer_size + 1}
-
-	for _, i = range testvals {
-		err := orbiter.Reset(i)
-		assert.Equal(t, nil, err)
-
-		// Ensure all indexes have been set to the given value
-		assert.Equal(t, i, orbiter.GetIndex(RECEIVER))
-		assert.Equal(t, i-1, orbiter.GetIndex(JOURNALER))
-		assert.Equal(t, i-2, orbiter.GetIndex(REPLICATOR))
-		assert.Equal(t, i-3, orbiter.GetIndex(UNMARSHALLER))
-		assert.Equal(t, i-4, orbiter.GetIndex(EXECUTOR))
-	}
-
-	// Ensure orbiter does not reset if running
-	orbiter.running = true
-	err := orbiter.Reset(buffer_size)
-	assert.Equal(t, "Cannot reset a running Orbiter", err.Error())
-}
-
-func TestReceiverOrbiterStart(t *testing.T) {
-	orbiter := NewReceiverOrbiter(buffer_size, receiver, journaler, replicator,
-		unmarshaller, executor)
-	receiverRan, journalerRan, replicatorRan, unmarshallerRan, executorRan =
-		false, false, false, false, false
-	orbiter.Start()
-
-	// Manually add a new message to the receiver buffer to be processed
-	// "{\"test\":\"This is a test message\"}" Base64 encoded
-	orbiter.receiverBuffer <- []byte("eyJ0ZXN0IjoiVGhpcyBpcyBhIHRlc3QgbWVzc2FnZSJ9")
-
-	time.Sleep(1 * time.Millisecond)
-
-	orbiter.Stop()
-
-	assert.Equal(t, true, receiverRan)
-	assert.Equal(t, true, journalerRan)
-	assert.Equal(t, true, replicatorRan)
-	assert.Equal(t, true, unmarshallerRan)
-	assert.Equal(t, true, executorRan)
-}
-
-func TestReceiverOrbiterSetReceiverIndex(t *testing.T) {
-	orbiter := NewReceiverOrbiter(buffer_size, nil, nil, nil, nil, nil)
+func TestOrbiterSetReceiverIndex(t *testing.T) {
+	orbiter := NewOrbiter(buffer_size, nil, nil, nil, nil, nil)
 	var err error
 	var old uint64
 
@@ -164,8 +57,8 @@ func TestReceiverOrbiterSetReceiverIndex(t *testing.T) {
 	assert.Equal(t, old, orbiter.GetIndex(RECEIVER))
 }
 
-func TestReceiverOrbiterSetJournalerIndex(t *testing.T) {
-	orbiter := NewReceiverOrbiter(buffer_size, nil, nil, nil, nil, nil)
+func TestOrbiterSetJournalerIndex(t *testing.T) {
+	orbiter := NewOrbiter(buffer_size, nil, nil, nil, nil, nil)
 	var err error
 	var old uint64
 
@@ -205,8 +98,8 @@ func TestReceiverOrbiterSetJournalerIndex(t *testing.T) {
 	assert.Equal(t, old, orbiter.GetIndex(JOURNALER))
 }
 
-func TestReceiverOrbiterSetReplicatorIndex(t *testing.T) {
-	orbiter := NewReceiverOrbiter(buffer_size, nil, nil, nil, nil, nil)
+func TestOrbiterSetReplicatorIndex(t *testing.T) {
+	orbiter := NewOrbiter(buffer_size, nil, nil, nil, nil, nil)
 	var err error
 	var old uint64
 
@@ -247,8 +140,8 @@ func TestReceiverOrbiterSetReplicatorIndex(t *testing.T) {
 	assert.Equal(t, old, orbiter.GetIndex(REPLICATOR))
 }
 
-func TestReceiverOrbiterSetUnmarshallerIndex(t *testing.T) {
-	orbiter := NewReceiverOrbiter(buffer_size, nil, nil, nil, nil, nil)
+func TestOrbiterSetUnmarshallerIndex(t *testing.T) {
+	orbiter := NewOrbiter(buffer_size, nil, nil, nil, nil, nil)
 	var err error
 	var old uint64
 
@@ -290,8 +183,8 @@ func TestReceiverOrbiterSetUnmarshallerIndex(t *testing.T) {
 	assert.Equal(t, old, orbiter.GetIndex(UNMARSHALLER))
 }
 
-func TestReceiverOrbiterSetExecutorIndex(t *testing.T) {
-	orbiter := NewReceiverOrbiter(buffer_size, nil, nil, nil, nil, nil)
+func TestOrbiterSetExecutorIndex(t *testing.T) {
+	orbiter := NewOrbiter(buffer_size, nil, nil, nil, nil, nil)
 	orbiter.Reset(5)
 	var err error
 	var old uint64
