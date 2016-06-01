@@ -262,9 +262,14 @@ func (o *Orbiter) runReceiver(h ReceiverHandler) {
 			h(o, i, msg)
 		}
 
-		// Let the next handler know it can proceed
+		// Let the next handler know it can proceed without blocking this one
 		if len(journalChannel) == 0 {
-			journalChannel <- 1
+			select {
+			case journalChannel <- 1:
+				// journal handler was notified
+			default:
+				// journal handler already knows, but hasn't processed new messages yet
+			}
 		}
 	}
 
