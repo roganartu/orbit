@@ -165,7 +165,7 @@ func (o *Orbiter) Reset(i uint64) error {
 func (o *Orbiter) Start() {
 	// Allocate channels
 	for i := range o.channel {
-		o.channel[i] = make(chan int)
+		o.channel[i] = make(chan int, 1)
 	}
 
 	go o.run()
@@ -222,6 +222,7 @@ func (o *Orbiter) run() {
 func (o *Orbiter) runReceiver(h Handler) {
 	var i uint64
 	journalChannel := o.channel[RECEIVER+1]
+	arr := []uint64{0}
 	for msg := range o.Input {
 		i = o.GetIndex(RECEIVER)
 
@@ -232,7 +233,8 @@ func (o *Orbiter) runReceiver(h Handler) {
 
 		// Run handler
 		if h != nil {
-			h(o, []uint64{i})
+			arr[0] = i
+			h(o, arr)
 		}
 
 		// Let the next handler know it can proceed
@@ -272,9 +274,14 @@ func (o *Orbiter) runHandler(h Handler, t int) {
 				h(o, indexes)
 			}
 
-			// Let the next handler know it can proceed
+			// Let the next handler know it can proceed without blocking this one
 			if len(nextChannel) == 0 && o.running && t != EXECUTOR {
-				nextChannel <- 1
+				select {
+				case nextChannel <- 1:
+					// Notified next handler that Messages are available
+				default:
+					// Handler already knows, but hasn't processed new messages yet
+				}
 			}
 		}
 	}
