@@ -5,11 +5,11 @@ import (
 )
 
 const (
-	RECEIVER     = iota
-	JOURNALER    = iota
-	REPLICATOR   = iota
-	UNMARSHALLER = iota
-	EXECUTOR     = iota
+	RECEIVER = iota
+	JOURNALER
+	REPLICATOR
+	UNMARSHALLER
+	EXECUTOR
 )
 
 // inputOrbiter unmarshals messages and coordinates journalling and replication.
@@ -63,7 +63,8 @@ func NewReceiverOrbiter(
 	// Start at index 4 so we don't have index underflow
 	orbiter.Reset(4)
 
-	// Create 'size' new Message objects and store them in the buffer
+	// Create 'size' new Message objects and store them in the buffer.
+	// This avoids costly object creation and GC while streaming data.
 	var i uint64
 	for i = 0; i < size; i++ {
 		orbiter.buffer[i] = new(Message)
@@ -114,7 +115,7 @@ func (o *inputOrbiter) Start() {
 // killing all goroutines.
 func (o *inputOrbiter) Stop() {
 	o.running = false
-	for i := 0; i <= EXECUTOR; i++ {
+	for i := range o.handler {
 		close(o.channel[i])
 	}
 }
