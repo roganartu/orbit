@@ -5,6 +5,10 @@
 // Alternatively read the paper: http://disruptor.googlecode.com/files/Disruptor-1.0.pdf
 package orbitus
 
+import (
+	"io"
+)
+
 // Handler is the Consumer handler function type.
 // Defaults are provided, however it is expected most users will define their
 // own functions. It will be called by the Orbiters when new messages are
@@ -43,7 +47,7 @@ type Message struct {
 
 	// Where the result should be returned to.
 	// Can be any interface that has a Write([]byte) method available
-	output interface{}
+	output io.Writer
 }
 
 type Orbiter interface {
