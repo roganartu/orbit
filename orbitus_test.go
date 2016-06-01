@@ -38,16 +38,6 @@ var (
 	}
 )
 
-func TestGetMessage(t *testing.T) {
-	orbiter := NewOrbiter(buffer_size, nil, nil, nil, nil, nil)
-
-	// Check out of bounds index wrapping
-	msg := orbiter.GetMessage(1)
-	msg.marshalled = []byte(test + string(1))
-	msg = orbiter.GetMessage(1 + buffer_size)
-	assert.Equal(t, msg.marshalled, []byte(test+string(1)))
-}
-
 func TestDefaultReceiver(t *testing.T) {
 	orbiter := NewOrbiter(buffer_size, nil, nil, nil, nil, nil)
 	orbiter.Start()
