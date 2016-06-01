@@ -172,13 +172,11 @@ func (o *Orbiter) Start() {
 }
 
 // Stop stops the Orbiter processing.
-// It closes the input stream and then closes all channels, effectively
-// killing all goroutines.
+// This stops processing gracefully. All messages sent to o.Input before calling Stop
+// will be processed.
 func (o *Orbiter) Stop() {
 	o.running = false
-	for i := range o.handler {
-		close(o.channel[i])
-	}
+	close(o.channel[RECEIVER])
 }
 
 // GetIndex returns the Orbiter's current index for the provided Consumer.
@@ -242,15 +240,19 @@ func (o *Orbiter) runReceiver(h Handler) {
 			journalChannel <- 1
 		}
 	}
+
+	// Close the other handler channels so they stop gracefully
+	for k, v := range o.channel {
+		if k != RECEIVER {
+			close(v)
+		}
+	}
 }
 
 // runHandler loops, calling the Handler when Messages are available to process.
 //
-// TODO gracefully handle Orbiter.Stop(). Currently all handlers stop
-// immediately. Better behaviour would be for Receiver to stop first and the
-// rest of the handlers finish processing anything available to them before
-// stopping. This could be achieved better by the Orbiter.Stop() function
-// closing the channel buffer and the receiver exiting on no more data.
+// Gracefully handles Orbiter.Stop(). runReceiver stops first and the rest of
+// handlers finish processing anything available to them before stopping.
 func (o *Orbiter) runHandler(h Handler, t int) {
 	var this, last, i, j uint64
 	nextChannel := o.channel[(t+1)%(EXECUTOR+1)]
