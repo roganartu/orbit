@@ -14,7 +14,7 @@ const (
 
 var (
 	DEFAULT_HANDLER = [...]Handler{
-		defaultReceiverFunction,
+		nil, // Required to simplify other logic around handler ordering
 		defaultJournalerFunction,
 		defaultReplicatorFunction,
 		defaultUnmarshallerFunction,
@@ -124,22 +124,34 @@ func (o *Orbiter) SetUnmarshallerIndex(i uint64) error {
 	return nil
 }
 
-func defaultReceiverFunction(o Receiver, ids []uint64) {
-	o.SetReceiverIndex(ids[0] + 1)
+func defaultReceiverFunction(p Processor, id uint64, obj interface{}) {
+	// Store message and current index
+	elem := p.GetMessage(id)
+	elem.SetID(id)
+
+	if b, ok := obj.([]byte); ok {
+		elem.SetMarshalled(b)
+	} else {
+		// Object isn't as expected, don't progress the buffer
+		return
+	}
+
+	p.SetMessage(id, elem)
+	p.SetReceiverIndex(id + 1)
 }
 
-func defaultJournalerFunction(o Receiver, ids []uint64) {
-	o.SetJournalerIndex(ids[0])
+func defaultJournalerFunction(p Processor, ids []uint64) {
+	p.SetJournalerIndex(ids[0])
 }
 
-func defaultReplicatorFunction(o Receiver, ids []uint64) {
-	o.SetReplicatorIndex(ids[0])
+func defaultReplicatorFunction(p Processor, ids []uint64) {
+	p.SetReplicatorIndex(ids[0])
 }
 
-func defaultUnmarshallerFunction(o Receiver, ids []uint64) {
-	o.SetUnmarshallerIndex(ids[0])
+func defaultUnmarshallerFunction(p Processor, ids []uint64) {
+	p.SetUnmarshallerIndex(ids[0])
 }
 
-func defaultExecutorFunction(o Receiver, ids []uint64) {
-	o.SetExecutorIndex(ids[0])
+func defaultExecutorFunction(p Processor, ids []uint64) {
+	p.SetExecutorIndex(ids[0])
 }

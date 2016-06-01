@@ -12,29 +12,29 @@ var (
 	test               = "Test string"
 
 	receiverRan = false
-	receiver    = func(r Receiver, ids []uint64) {
+	receiver    = func(p Processor, id uint64, i interface{}) {
 		receiverRan = true
-		r.SetReceiverIndex(ids[0] + 1)
+		p.SetReceiverIndex(id + 1)
 	}
 	journalerRan = false
-	journaler    = func(r Receiver, ids []uint64) {
+	journaler    = func(p Processor, ids []uint64) {
 		journalerRan = true
-		r.SetJournalerIndex(ids[0])
+		p.SetJournalerIndex(ids[0])
 	}
 	replicatorRan = false
-	replicator    = func(r Receiver, ids []uint64) {
+	replicator    = func(p Processor, ids []uint64) {
 		replicatorRan = true
-		r.SetReplicatorIndex(ids[0])
+		p.SetReplicatorIndex(ids[0])
 	}
 	unmarshallerRan = false
-	unmarshaller    = func(r Receiver, ids []uint64) {
+	unmarshaller    = func(p Processor, ids []uint64) {
 		unmarshallerRan = true
-		r.SetUnmarshallerIndex(ids[0])
+		p.SetUnmarshallerIndex(ids[0])
 	}
 	executorRan = false
-	executor    = func(r Receiver, ids []uint64) {
+	executor    = func(p Processor, ids []uint64) {
 		executorRan = true
-		r.SetExecutorIndex(ids[0])
+		p.SetExecutorIndex(ids[0])
 	}
 )
 
@@ -46,6 +46,20 @@ func TestGetMessage(t *testing.T) {
 	msg.marshalled = []byte(test + string(1))
 	msg = orbiter.GetMessage(1 + buffer_size)
 	assert.Equal(t, msg.marshalled, []byte(test+string(1)))
+}
+
+func TestDefaultReceiver(t *testing.T) {
+	orbiter := NewOrbiter(buffer_size, nil, nil, nil, nil, nil)
+	orbiter.Start()
+
+	orbiter.Input <- []byte(test)
+	time.Sleep(1 * time.Millisecond)
+
+	orbiter.Stop()
+
+	// Check out of bounds index wrapping
+	msg := orbiter.GetMessage(4)
+	assert.Equal(t, msg.GetMarshalled(), []byte(test))
 }
 
 func TestGetBufferSize(t *testing.T) {

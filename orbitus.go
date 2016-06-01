@@ -27,7 +27,11 @@ import (
 // it the consumer should wait until this changes before processing any
 // messages. This state should only really ever happen on startup or reset, but
 // it is safe practice for the system in any case.
-type Handler func(Receiver, []uint64)
+type Handler func(Processor, []uint64)
+
+// ReceiverHandler is the same as Handler except it is designed to take arbitrary input
+// and store it in the buffer instead of processing data that is already in the buffer.
+type ReceiverHandler func(Processor, uint64, interface{})
 
 // Orbiter maintains buffers and Consumers.
 //
@@ -38,6 +42,9 @@ type Handler func(Receiver, []uint64)
 type Orbiter struct {
 	// Buffered byte channel for the input stream
 	Input chan []byte
+
+	// Receiver handler. Similar to Handler but accepts interface
+	receiver ReceiverHandler
 
 	// The circular buffer
 	buffer []*Message
@@ -64,7 +71,7 @@ type Orbiter struct {
 //     Client
 // Strictly speaking the Sender is not required and is mostly useful for using Orbitus
 // behind a client endpoint where the client expects a response.
-type Receiver interface {
+type Processor interface {
 	// Set the receiver index to the given value
 	SetReceiverIndex(uint64) error
 
@@ -79,6 +86,12 @@ type Receiver interface {
 
 	// Set index of Business Logic Consumer to the given value
 	SetExecutorIndex(uint64) error
+
+	// Get the message at the given address in the buffer.
+	GetMessage(uint64) *Message
+
+	// Set the message at the given address in the buffer.
+	SetMessage(uint64, *Message)
 }
 
 // NewOrbiter initializes a new Orbiter
@@ -87,7 +100,7 @@ type Receiver interface {
 // Space for the buffer is allocated and is filled with empty Message objects.
 func NewOrbiter(
 	size uint64,
-	receiver Handler,
+	receiver ReceiverHandler,
 	journaler Handler,
 	replicator Handler,
 	unmarshaller Handler,
@@ -110,13 +123,17 @@ func NewOrbiter(
 		Input: make(chan []byte, 4096),
 	}
 	// Assign Handlers
-	orbiter.handler[RECEIVER] = receiver
+	orbiter.receiver = receiver
 	orbiter.handler[JOURNALER] = journaler
 	orbiter.handler[REPLICATOR] = replicator
 	orbiter.handler[UNMARSHALLER] = unmarshaller
 	orbiter.handler[EXECUTOR] = executor
+
+	if orbiter.receiver == nil {
+		orbiter.receiver = defaultReceiverFunction
+	}
 	for k, v := range orbiter.handler {
-		if v == nil {
+		if k != RECEIVER && v == nil {
 			orbiter.handler[k] = DEFAULT_HANDLER[k]
 		}
 	}
@@ -201,6 +218,21 @@ func (o *Orbiter) GetMessage(i uint64) *Message {
 	return o.buffer[i]
 }
 
+// SetMessage sets the message at the given address in the buffer.
+//
+// If the provided index is larger than the buffer size then the modulus is
+// used to generate an index that is in range.
+//
+// The message is not copied, do not hold a reference to it after setting it with this method.
+func (o *Orbiter) SetMessage(i uint64, m *Message) {
+	// Bounds check
+	if i >= o.bufferSize {
+		i = i % o.bufferSize
+	}
+
+	o.buffer[i] = m
+}
+
 // GetBufferSize returns the size of the Orbiter's Message buffer array.
 func (o *Orbiter) GetBufferSize() uint64 {
 	return o.bufferSize
@@ -209,7 +241,7 @@ func (o *Orbiter) GetBufferSize() uint64 {
 // runOrbiter starts all the Handler management goroutines.
 func (o *Orbiter) run() {
 	o.running = true
-	go o.runReceiver(o.handler[RECEIVER])
+	go o.runReceiver(o.receiver)
 	go o.runHandler(o.handler[JOURNALER], JOURNALER)
 	go o.runHandler(o.handler[REPLICATOR], REPLICATOR)
 	go o.runHandler(o.handler[UNMARSHALLER], UNMARSHALLER)
@@ -217,22 +249,17 @@ func (o *Orbiter) run() {
 }
 
 // runReceiver processes messages sent to it until the channel is closed.
-func (o *Orbiter) runReceiver(h Handler) {
+func (o *Orbiter) runReceiver(h ReceiverHandler) {
 	var i uint64
 	journalChannel := o.channel[RECEIVER+1]
 	arr := []uint64{0}
 	for msg := range o.Input {
 		i = o.GetIndex(RECEIVER)
 
-		// Store message and current index
-		elem := o.buffer[i%o.GetBufferSize()]
-		elem.id = i
-		elem.marshalled = msg
-
 		// Run handler
 		if h != nil {
 			arr[0] = i
-			h(o, arr)
+			h(o, i, msg)
 		}
 
 		// Let the next handler know it can proceed

@@ -28,6 +28,10 @@ func (m *Message) GetID() uint64 {
 	return m.id
 }
 
+func (m *Message) SetID(id uint64) {
+	m.id = id
+}
+
 func (m *Message) GetMarshalled() []byte {
 	return m.marshalled
 }
