@@ -1,4 +1,4 @@
-package orbitus
+package orbit
 
 import (
 	"testing"
@@ -7,23 +7,23 @@ import (
 )
 
 func TestGetMessage(t *testing.T) {
-	orbiter := NewOrbiter(buffer_size, nil, nil, nil, nil, nil)
+	loop := New(buffer_size, nil, nil, nil, nil, nil)
 
 	// Check out of bounds index wrapping
-	msg := orbiter.GetMessage(1)
+	msg := loop.GetMessage(1)
 	msg.marshalled = []byte(test + string(1))
-	msg = orbiter.GetMessage(1 + buffer_size)
+	msg = loop.GetMessage(1 + buffer_size)
 	assert.Equal(t, msg.marshalled, []byte(test+string(1)))
 }
 
 func TestSetMessage(t *testing.T) {
-	orbiter := NewOrbiter(buffer_size, nil, nil, nil, nil, nil)
+	loop := New(buffer_size, nil, nil, nil, nil, nil)
 
 	// Check out of bounds index wrapping
-	msg := orbiter.GetMessage(1)
+	msg := loop.GetMessage(1)
 	msg.SetMarshalled([]byte(test))
-	orbiter.SetMessage(1+buffer_size, msg)
-	msg = orbiter.GetMessage(1)
+	loop.SetMessage(1+buffer_size, msg)
+	msg = loop.GetMessage(1)
 	assert.Equal(t, msg.GetMarshalled(), []byte(test))
 }
 
@@ -53,8 +53,8 @@ func TestMessageUnmarshalled(t *testing.T) {
 }
 
 func BenchmarkGetMessage(b *testing.B) {
-	orbiter := NewOrbiter(buffer_size, nil, nil, nil, nil, nil)
+	loop := New(buffer_size, nil, nil, nil, nil, nil)
 	for i := 0; i < b.N; i++ {
-		orbiter.GetMessage(uint64(i))
+		loop.GetMessage(uint64(i))
 	}
 }

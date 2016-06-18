@@ -1,4 +1,4 @@
-package orbitus
+package orbit
 
 import (
 	"errors"
@@ -22,67 +22,67 @@ var (
 	}
 )
 
-// SetExecutorIndex sets the Orbiter's executorIndex to the given value.
+// SetExecutorIndex sets the Loop's executorIndex to the given value.
 //
 // The provided value is checked to ensure that it is within acceptable bounds.
 // Specifically, it cannot be less than the current index or greater than the
 // current unmarshallerIndex.
 //
 // If the above rules are broken an error is returned, else nil.
-func (o *Orbiter) SetExecutorIndex(i uint64) error {
-	if i < o.GetIndex(EXECUTOR) {
+func (l *Loop) SetExecutorIndex(i uint64) error {
+	if i < l.GetIndex(EXECUTOR) {
 		return errors.New("New executor index cannot be less than current " +
 			"index")
-	} else if i > o.GetIndex(UNMARSHALLER)-1 {
+	} else if i > l.GetIndex(UNMARSHALLER)-1 {
 		return errors.New("New executor index cannot be greater than the " +
 			"current unmarshaller index")
 	}
 
-	o.index[EXECUTOR] = i
+	l.index[EXECUTOR] = i
 	return nil
 }
 
-// SetReceiverIndex sets the Orbiter's receiverIndex to the given value.
+// SetReceiverIndex sets the Loop's receiverIndex to the given value.
 //
 // The provided value is checked to ensure that it is within acceptable bounds.
 // Specifically, it cannot be less than the current index or greater than the
 // current executorIndex.
 //
 // If the above rules are broken an error is returned, else nil.
-func (o *Orbiter) SetReceiverIndex(i uint64) error {
-	if i < o.GetIndex(RECEIVER) {
+func (l *Loop) SetReceiverIndex(i uint64) error {
+	if i < l.GetIndex(RECEIVER) {
 		return errors.New("New receiver index cannot be less than current " +
 			"index")
-	} else if i >= o.GetIndex(EXECUTOR)+o.GetBufferSize() {
+	} else if i >= l.GetIndex(EXECUTOR)+l.GetBufferSize() {
 		return errors.New("The Receiver Consumer cannot pass the Business " +
 			"Logic Consumer")
 	}
 
-	o.index[RECEIVER] = i
+	l.index[RECEIVER] = i
 	return nil
 }
 
-// SetJournalerIndex sets the Orbiter's journalerIndex to the given value.
+// SetJournalerIndex sets the Loop's journalerIndex to the given value.
 //
 // The provided value is checked to ensure that it is within acceptable bounds.
 // Specifically, it cannot be less than the current index or greater than the
 // current receiverIndex.
 //
 // If the above rules are broken an error is returned, else nil.
-func (o *Orbiter) SetJournalerIndex(i uint64) error {
-	if i < o.GetIndex(JOURNALER) {
+func (l *Loop) SetJournalerIndex(i uint64) error {
+	if i < l.GetIndex(JOURNALER) {
 		return errors.New("New journaler index cannot be less than current " +
 			"index")
-	} else if i > o.GetIndex(RECEIVER)-1 {
+	} else if i > l.GetIndex(RECEIVER)-1 {
 		return errors.New("New journaler index cannot be greater than the " +
 			"current receiver index")
 	}
 
-	o.index[JOURNALER] = i
+	l.index[JOURNALER] = i
 	return nil
 }
 
-// SetReplicatorIndex sets the Orbiter's replicatorIndex to the given
+// SetReplicatorIndex sets the Loop's replicatorIndex to the given
 // value.
 //
 // The provided value is checked to ensure that it is within acceptable bounds.
@@ -90,20 +90,20 @@ func (o *Orbiter) SetJournalerIndex(i uint64) error {
 // current journalerIndex.
 //
 // If the above rules are broken an error is returned, else nil.
-func (o *Orbiter) SetReplicatorIndex(i uint64) error {
-	if i < o.GetIndex(REPLICATOR) {
+func (l *Loop) SetReplicatorIndex(i uint64) error {
+	if i < l.GetIndex(REPLICATOR) {
 		return errors.New("New replicator index cannot be less than current " +
 			"index")
-	} else if i > o.GetIndex(JOURNALER)-1 {
+	} else if i > l.GetIndex(JOURNALER)-1 {
 		return errors.New("New replicator index cannot be greater than the " +
 			"current journaler index")
 	}
 
-	o.index[REPLICATOR] = i
+	l.index[REPLICATOR] = i
 	return nil
 }
 
-// SetUnmarshallerIndex sets the Orbiter's unmarshallerIndex to the given
+// SetUnmarshallerIndex sets the Loop's unmarshallerIndex to the given
 // value.
 //
 // The provided value is checked to ensure that it is within acceptable bounds.
@@ -111,16 +111,16 @@ func (o *Orbiter) SetReplicatorIndex(i uint64) error {
 // current replicatorIndex.
 //
 // If the above rules are broken an error is returned, else nil.
-func (o *Orbiter) SetUnmarshallerIndex(i uint64) error {
-	if i < o.GetIndex(UNMARSHALLER) {
+func (l *Loop) SetUnmarshallerIndex(i uint64) error {
+	if i < l.GetIndex(UNMARSHALLER) {
 		return errors.New("New unmarshaller index cannot be less than " +
 			"current index")
-	} else if i > o.GetIndex(REPLICATOR)-1 {
+	} else if i > l.GetIndex(REPLICATOR)-1 {
 		return errors.New("New unmarshaller index cannot be greater than the " +
 			"current replicator index")
 	}
 
-	o.index[UNMARSHALLER] = i
+	l.index[UNMARSHALLER] = i
 	return nil
 }
 

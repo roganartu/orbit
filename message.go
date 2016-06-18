@@ -1,10 +1,10 @@
-package orbitus
+package orbit
 
 import (
 	"io"
 )
 
-// Message is the object that is stored in the Orbiter ring buffer.
+// Message is the object that is stored in the Loop ring buffer.
 // Each consumer must only have write access to a single field.
 // This means the data will be duplicated, but it prevents unnecessary locking.
 type Message struct {

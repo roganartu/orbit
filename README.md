@@ -1,4 +1,4 @@
-orbitus
+Orbit
 =======
 
 A Go implementation of the LMAX Disruptor

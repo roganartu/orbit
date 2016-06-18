@@ -1,9 +1,9 @@
-// Package orbitus provides an implementation of the LMAX Disruptor.
+// Orbit provides an implementation of the LMAX Disruptor.
 //
 // For more info on LMAX see Martin Fowler's blog post: http://martinfowler.com/articles/lmax.html
 //
 // Alternatively read the paper: http://disruptor.googlecode.com/files/Disruptor-1.0.pdf
-package orbitus
+package orbit
 
 import (
 	"errors"
@@ -11,14 +11,14 @@ import (
 
 // Handler is the Consumer handler function type.
 // Defaults are provided, however it is expected most users will define their
-// own functions. It will be called by the Orbiters when new messages are
+// own functions. It will be called by the Loops when new messages are
 // available for processing. It is not expected to be a long-running process.
 //
 // It should remember the index of the last item it has processed. It is the
 // Handler's responsibility to update the corresponding index via the
-// appropriate Orbiter methods once processing of a Message is complete.
+// appropriate Loop methods once processing of a Message is complete.
 //
-// It is assumed that all objects between the index stored in the Orbiter
+// It is assumed that all objects between the index stored in the Loop
 // and the next consumer (backwards). Once this index is set the consumer behind
 // will be allowed to process up to an including the new value.
 // The second parameter is an array of indexes for the handler to process.
@@ -33,13 +33,13 @@ type Handler func(Processor, []uint64)
 // and store it in the buffer instead of processing data that is already in the buffer.
 type ReceiverHandler func(Processor, uint64, interface{})
 
-// Orbiter maintains buffers and Consumers.
+// Loop maintains buffers and Consumers.
 //
 // Consumers are defined in the order they will be positined in the ring buffer.
-// If the orbiter is intended to receive data from a client the Executor handler
-// should perform business logic. If the orbiter is intended to send responses to
+// If the Loop is intended to receive data from a client the Executor handler
+// should perform business logic. If the Loop is intended to send responses to
 // clients then the Executor handler should write to a HTTP response.
-type Orbiter struct {
+type Loop struct {
 	// Buffered byte channel for the input stream
 	Input chan []byte
 
@@ -58,7 +58,7 @@ type Orbiter struct {
 	handler []Handler
 	channel []chan int
 
-	// Flag to indicate whether Orbiter is running
+	// Flag to indicate whether Loop is running
 	running bool
 }
 
@@ -69,7 +69,7 @@ type Orbiter struct {
 //     Receiver (Receiver -> Journaler -> Replicator -> Unmarshaller -> Executor) ->
 //     Sender (Receiver -> Journaler -> Replicator -> Marshaller -> Publisher) ->
 //     Client
-// Strictly speaking the Sender is not required and is mostly useful for using Orbitus
+// Strictly speaking the Sender is not required and is mostly useful for using Orbit
 // behind a client endpoint where the client expects a response.
 type Processor interface {
 	// Set the receiver index to the given value
@@ -94,19 +94,19 @@ type Processor interface {
 	SetMessage(uint64, *Message)
 }
 
-// NewOrbiter initializes a new Orbiter
+// New initializes a new Loop
 //
 // All indexes are set to the beginning of the buffer and Handlers are assigned.
 // Space for the buffer is allocated and is filled with empty Message objects.
-func NewOrbiter(
+func New(
 	size uint64,
 	receiver ReceiverHandler,
 	journaler Handler,
 	replicator Handler,
 	unmarshaller Handler,
 	executor Handler,
-) *Orbiter {
-	orbiter := &Orbiter{
+) *Loop {
+	loop := &Loop{
 		bufferSize: size,
 		buffer:     make([]*Message, size),
 
@@ -123,99 +123,99 @@ func NewOrbiter(
 		Input: make(chan []byte, 4096),
 	}
 	// Assign Handlers
-	orbiter.receiver = receiver
-	orbiter.handler[JOURNALER] = journaler
-	orbiter.handler[REPLICATOR] = replicator
-	orbiter.handler[UNMARSHALLER] = unmarshaller
-	orbiter.handler[EXECUTOR] = executor
+	loop.receiver = receiver
+	loop.handler[JOURNALER] = journaler
+	loop.handler[REPLICATOR] = replicator
+	loop.handler[UNMARSHALLER] = unmarshaller
+	loop.handler[EXECUTOR] = executor
 
-	if orbiter.receiver == nil {
-		orbiter.receiver = defaultReceiverFunction
+	if loop.receiver == nil {
+		loop.receiver = defaultReceiverFunction
 	}
-	for k, v := range orbiter.handler {
+	for k, v := range loop.handler {
 		if k != RECEIVER && v == nil {
-			orbiter.handler[k] = DEFAULT_HANDLER[k]
+			loop.handler[k] = DEFAULT_HANDLER[k]
 		}
 	}
 
 	// Start at index 4 so we don't have index underflow
-	orbiter.Reset(4)
+	loop.Reset(4)
 
 	// Create 'size' new Message objects and store them in the buffer.
 	// This avoids costly object creation and GC while streaming data.
 	var i uint64
 	for i = 0; i < size; i++ {
-		orbiter.buffer[i] = new(Message)
+		loop.buffer[i] = new(Message)
 	}
 
-	return orbiter
+	return loop
 }
 
 // Reset sets all indexes to a given value.
-// This is useful for rebuilding Orbiter state from an input file
+// This is useful for rebuilding Loop state from an input file
 // (eg: journaled output) instead of manually looping through the buffer until
 // the desired index is reached.
 //
-// Returns an error if called while Orbiter is running. Stop Orbiter with
-// Orbiter.Stop() before resetting.
-func (o *Orbiter) Reset(i uint64) error {
-	if o.running {
-		return errors.New("Cannot reset a running Orbiter")
+// Returns an error if called while Lopp is running. Stop Loop with
+// Loop.Stop() before resetting.
+func (l *Loop) Reset(i uint64) error {
+	if l.running {
+		return errors.New("Cannot reset a running Loop")
 	}
 
 	// Bypass the setters otherwise their sanity checks will error
 	var j uint64
 	for j = 0; j <= EXECUTOR; j++ {
 		// The first item in index should be first in the buffer
-		o.index[j] = i - j
+		l.index[j] = i - j
 	}
 
 	return nil
 }
 
-// Start starts the Orbiter processing.
+// Start starts the Loop processing.
 // It launches a number of goroutines (one for each Handler + one manager).
 //
 // These goroutines handle the index checking logic and call the provided
 // Handler function when there is data in the buffer available for it to
 // process.
-func (o *Orbiter) Start() {
+func (l *Loop) Start() {
 	// Allocate channels
-	for i := range o.channel {
-		o.channel[i] = make(chan int, 1)
+	for i := range l.channel {
+		l.channel[i] = make(chan int, 1)
 	}
 
-	go o.run()
+	go l.run()
 }
 
-// Stop stops the Orbiter processing.
-// This stops processing gracefully. All messages sent to o.Input before calling Stop
+// Stop stops the Loop processing.
+// This stops processing gracefully. All messages sent to l.Input before calling Stop
 // will be processed.
-func (o *Orbiter) Stop() {
-	o.running = false
-	close(o.channel[RECEIVER])
+func (l *Loop) Stop() {
+	l.running = false
+	close(l.channel[RECEIVER])
 }
 
-// GetIndex returns the Orbiter's current index for the provided Consumer.
+// GetIndex returns the Loop's current index for the provided Consumer.
 // This index may be larger than the buffer size, as the modulus is used to get
 // a valid array index.
 //
 // h is the handler to fetch the index for.
-func (o *Orbiter) GetIndex(h int) uint64 {
-	return o.index[h]
+func (l *Loop) GetIndex(h int) uint64 {
+	return l.index[h]
 }
 
 // GetMessage returns the message at the given address in the buffer.
 //
 // If the provided index is larger than the buffer size then the modulus is
 // used to generate an index that is in range.
-func (o *Orbiter) GetMessage(i uint64) *Message {
+func (l *Loop) GetMessage(i uint64) *Message {
 	// Bounds check
-	if i >= o.bufferSize {
-		i = i % o.bufferSize
+	if i >= l.bufferSize {
+		i = i % l.bufferSize
 	}
 
-	return o.buffer[i]
+	return l.buffer[i]
 }
 
 // SetMessage sets the message at the given address in the buffer.
@@ -224,42 +224,42 @@ func (o *Orbiter) GetMessage(i uint64) *Message {
 // used to generate an index that is in range.
 //
 // The message is not copied, do not hold a reference to it after setting it with this method.
-func (o *Orbiter) SetMessage(i uint64, m *Message) {
+func (l *Loop) SetMessage(i uint64, m *Message) {
 	// Bounds check
-	if i >= o.bufferSize {
-		i = i % o.bufferSize
+	if i >= l.bufferSize {
+		i = i % l.bufferSize
 	}
 
-	o.buffer[i] = m
+	l.buffer[i] = m
 }
 
-// GetBufferSize returns the size of the Orbiter's Message buffer array.
-func (o *Orbiter) GetBufferSize() uint64 {
-	return o.bufferSize
+// GetBufferSize returns the size of the Loop's Message buffer array.
+func (l *Loop) GetBufferSize() uint64 {
+	return l.bufferSize
 }
 
-// runOrbiter starts all the Handler management goroutines.
-func (o *Orbiter) run() {
-	o.running = true
-	go o.runReceiver(o.receiver)
-	go o.runHandler(o.handler[JOURNALER], JOURNALER)
-	go o.runHandler(o.handler[REPLICATOR], REPLICATOR)
-	go o.runHandler(o.handler[UNMARSHALLER], UNMARSHALLER)
-	go o.runHandler(o.handler[EXECUTOR], EXECUTOR)
+// run starts all the Handler management goroutines.
+func (l *Loop) run() {
+	l.running = true
+	go l.runReceiver(l.receiver)
+	go l.runHandler(l.handler[JOURNALER], JOURNALER)
+	go l.runHandler(l.handler[REPLICATOR], REPLICATOR)
+	go l.runHandler(l.handler[UNMARSHALLER], UNMARSHALLER)
+	go l.runHandler(l.handler[EXECUTOR], EXECUTOR)
 }
 
 // runReceiver processes messages sent to it until the channel is closed.
-func (o *Orbiter) runReceiver(h ReceiverHandler) {
+func (l *Loop) runReceiver(h ReceiverHandler) {
 	var i uint64
-	journalChannel := o.channel[RECEIVER+1]
+	journalChannel := l.channel[RECEIVER+1]
 	arr := []uint64{0}
-	for msg := range o.Input {
-		i = o.GetIndex(RECEIVER)
+	for msg := range l.Input {
+		i = l.GetIndex(RECEIVER)
 
 		// Run handler
 		if h != nil {
 			arr[0] = i
-			h(o, i, msg)
+			h(l, i, msg)
 		}
 
 		// Let the next handler know it can proceed without blocking this one
@@ -274,7 +274,7 @@ func (o *Orbiter) runReceiver(h ReceiverHandler) {
 	}
 
 	// Close the other handler channels so they stop gracefully
-	for k, v := range o.channel {
+	for k, v := range l.channel {
 		if k != RECEIVER {
 			close(v)
 		}
@@ -283,17 +283,17 @@ func (o *Orbiter) runReceiver(h ReceiverHandler) {
 
 // runHandler loops, calling the Handler when Messages are available to process.
 //
-// Gracefully handles Orbiter.Stop(). runReceiver stops first and the rest of
+// Gracefully handles Loop.Stop(). runReceiver stops first and the rest of
 // handlers finish processing anything available to them before stopping.
-func (o *Orbiter) runHandler(h Handler, t int) {
+func (l *Loop) runHandler(h Handler, t int) {
 	var this, last, i, j uint64
-	nextChannel := o.channel[(t+1)%(EXECUTOR+1)]
-	for _ = range o.channel[t] {
+	nextChannel := l.channel[(t+1)%(EXECUTOR+1)]
+	for _ = range l.channel[t] {
 		// Get the current indexes.
 		// this - current index of this Handler
 		// last - highest index that this Handler can process
-		this = o.GetIndex(t)
-		last = o.GetIndex(t-1) - 1
+		this = l.GetIndex(t)
+		last = l.GetIndex(t-1) - 1
 
 		// Check if we can process anything
 		if this < last {
@@ -305,11 +305,11 @@ func (o *Orbiter) runHandler(h Handler, t int) {
 
 			// Call the Handler
 			if h != nil {
-				h(o, indexes)
+				h(l, indexes)
 			}
 
 			// Let the next handler know it can proceed without blocking this one
-			if len(nextChannel) == 0 && o.running && t != EXECUTOR {
+			if len(nextChannel) == 0 && l.running && t != EXECUTOR {
 				select {
 				case nextChannel <- 1:
 					// Notified next handler that Messages are available
