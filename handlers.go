@@ -132,8 +132,10 @@ func defaultReceiverFunction(p Processor, id uint64, obj interface{}) {
 	if b, ok := obj.([]byte); ok {
 		elem.SetMarshalled(b)
 	} else {
-		// Object isn't as expected, don't progress the buffer
-		return
+		// Object isn't as expected but if we don't progress the buffer then the loop will hang.
+		// Set the message to nil, future handlers should expect and handle this case.
+		// TODO perhaps this should be an error instead?
+		elem.SetMarshalled(nil)
 	}
 
 	p.SetMessage(id, elem)
