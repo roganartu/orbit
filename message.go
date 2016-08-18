@@ -11,8 +11,8 @@ type Message struct {
 	// ID of message. Monotonically increasing 64 bit unsigned int
 	id uint64
 
-	// Marshalled (raw) data.
-	marshalled []byte
+	// Marshalled (raw) data as it was input into the loop
+	marshalled interface{}
 
 	// Unmarshalled data.
 	// Using an interface allows the package user to define what their
@@ -32,13 +32,12 @@ func (m *Message) SetID(id uint64) {
 	m.id = id
 }
 
-func (m *Message) GetMarshalled() []byte {
+func (m *Message) GetMarshalled() interface{} {
 	return m.marshalled
 }
 
-func (m *Message) SetMarshalled(b []byte) {
-	m.marshalled = make([]byte, len(b))
-	copy(m.marshalled, b)
+func (m *Message) SetMarshalled(v interface{}) {
+	m.marshalled = v
 }
 
 func (m *Message) GetUnmarshalled() interface{} {

@@ -33,14 +33,6 @@ func TestMessageID(t *testing.T) {
 	assert.Equal(t, msg.GetID(), uint64(100))
 }
 
-func TestMessageMarshalled(t *testing.T) {
-	msg := Message{}
-	b := []byte{1, 2}
-	msg.SetMarshalled(b)
-	b[0] = 0
-	assert.Equal(t, msg.GetMarshalled(), []byte{1, 2})
-}
-
 func TestMessageUnmarshalled(t *testing.T) {
 	tmp := struct {
 		Title string

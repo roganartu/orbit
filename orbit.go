@@ -40,8 +40,8 @@ type ReceiverHandler func(Processor, uint64, interface{})
 // should perform business logic. If the Loop is intended to send responses to
 // clients then the Executor handler should write to a HTTP response.
 type Loop struct {
-	// Buffered byte channel for the input stream
-	Input chan []byte
+	// Buffered interface channel for the input stream
+	Input chan interface{}
 
 	// Receiver handler. Similar to Handler but accepts interface
 	receiver ReceiverHandler
@@ -120,7 +120,7 @@ func New(
 
 		// Create the input stream channel
 		// TODO allow tweaking this size. It is likely to affect performance, especially in IO-heavy workloads
-		Input: make(chan []byte, 4096),
+		Input: make(chan interface{}, 4096),
 	}
 	// Assign Handlers
 	loop.receiver = receiver
