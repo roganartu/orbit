@@ -143,17 +143,17 @@ func defaultReceiverFunction(p Processor, id uint64, obj interface{}) {
 }
 
 func defaultJournalerFunction(p Processor, ids []uint64) {
-	p.SetJournalerIndex(ids[0])
+	p.SetJournalerIndex(ids[len(ids)-1])
 }
 
 func defaultReplicatorFunction(p Processor, ids []uint64) {
-	p.SetReplicatorIndex(ids[0])
+	p.SetReplicatorIndex(ids[len(ids)-1])
 }
 
 func defaultUnmarshallerFunction(p Processor, ids []uint64) {
-	p.SetUnmarshallerIndex(ids[0])
+	p.SetUnmarshallerIndex(ids[len(ids)-1])
 }
 
 func defaultExecutorFunction(p Processor, ids []uint64) {
-	p.SetExecutorIndex(ids[0])
+	p.SetExecutorIndex(ids[len(ids)-1])
 }
