@@ -1,6 +1,7 @@
 package orbit
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -11,28 +12,40 @@ var (
 	buffer_size uint64 = 256 // 2^8
 	test               = "Test string"
 
+	runCheckLock = &sync.Mutex{}
+
 	receiverRan = false
 	receiver    = func(p Processor, id uint64, i interface{}) {
+		runCheckLock.Lock()
+		defer runCheckLock.Unlock()
 		receiverRan = true
 		p.SetReceiverIndex(id + 1)
 	}
 	journalerRan = false
 	journaler    = func(p Processor, ids []uint64) {
+		runCheckLock.Lock()
+		defer runCheckLock.Unlock()
 		journalerRan = true
 		p.SetJournalerIndex(ids[0])
 	}
 	replicatorRan = false
 	replicator    = func(p Processor, ids []uint64) {
+		runCheckLock.Lock()
+		defer runCheckLock.Unlock()
 		replicatorRan = true
 		p.SetReplicatorIndex(ids[0])
 	}
 	unmarshallerRan = false
 	unmarshaller    = func(p Processor, ids []uint64) {
+		runCheckLock.Lock()
+		defer runCheckLock.Unlock()
 		unmarshallerRan = true
 		p.SetUnmarshallerIndex(ids[0])
 	}
 	executorRan = false
 	executor    = func(p Processor, ids []uint64) {
+		runCheckLock.Lock()
+		defer runCheckLock.Unlock()
 		executorRan = true
 		p.SetExecutorIndex(ids[0])
 	}
@@ -86,10 +99,13 @@ func TestNew(t *testing.T) {
 }
 
 func TestLoopStart(t *testing.T) {
-	loop := New(buffer_size, receiver, journaler, replicator,
-		unmarshaller, executor)
+	runCheckLock.Lock()
 	receiverRan, journalerRan, replicatorRan, unmarshallerRan, executorRan =
 		false, false, false, false, false
+	runCheckLock.Unlock()
+
+	loop := New(buffer_size, receiver, journaler, replicator,
+		unmarshaller, executor)
 	loop.Start()
 
 	// Manually add a new message to the receiver buffer to be processed
@@ -100,6 +116,8 @@ func TestLoopStart(t *testing.T) {
 
 	loop.Stop()
 
+	runCheckLock.Lock()
+	defer runCheckLock.Unlock()
 	assert.Equal(t, true, receiverRan)
 	assert.Equal(t, true, journalerRan)
 	assert.Equal(t, true, replicatorRan)

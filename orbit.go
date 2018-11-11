@@ -7,6 +7,9 @@ package orbit
 
 import (
 	"errors"
+	"sync"
+	"sync/atomic"
+	"unsafe"
 )
 
 // Handler is the Consumer handler function type.
@@ -47,7 +50,7 @@ type Loop struct {
 	receiver ReceiverHandler
 
 	// The circular buffer
-	buffer []*Message
+	buffer []unsafe.Pointer
 
 	// Size of the buffer
 	// Must be a power of 2
@@ -56,10 +59,11 @@ type Loop struct {
 	// Indexes, handlers and channels for all consumers
 	index   []uint64
 	handler []Handler
-	channel []chan int
+	channel []chan struct{}
 
 	// Flag to indicate whether Loop is running
-	running bool
+	running       bool
+	startStopLock *sync.Mutex
 }
 
 // Processor marshals/unmarshals Business Logic Consumer output received from and sent to clients.
@@ -108,15 +112,16 @@ func New(
 ) *Loop {
 	loop := &Loop{
 		bufferSize: size,
-		buffer:     make([]*Message, size),
+		buffer:     make([]unsafe.Pointer, size),
 
 		// Start in stopped state
-		running: false,
+		running:       false,
+		startStopLock: &sync.Mutex{},
 
 		// Create handler and index arrays
 		handler: make([]Handler, 5),
 		index:   make([]uint64, 5),
-		channel: make([]chan int, 5),
+		channel: make([]chan struct{}, 5),
 
 		// Create the input stream channel
 		// TODO allow tweaking this size. It is likely to affect performance, especially in IO-heavy workloads
@@ -145,7 +150,11 @@ func New(
 	// This avoids costly object creation and GC while streaming data.
 	var i uint64
 	for i = 0; i < size; i++ {
-		loop.buffer[i] = new(Message)
+		msg := &Message{}
+		msg.Init()
+		// Just needs to be anything, so that the atomic.StorePointer doesn't panic on nil deref
+		loop.buffer[i] = unsafe.Pointer(&struct{}{})
+		atomic.StorePointer(&loop.buffer[i], unsafe.Pointer(msg))
 	}
 
 	return loop
@@ -182,7 +191,7 @@ func (l *Loop) Reset(i uint64) error {
 func (l *Loop) Start() {
 	// Allocate channels
 	for i := range l.channel {
-		l.channel[i] = make(chan int, 1)
+		l.channel[i] = make(chan struct{}, 1)
 	}
 
 	go l.run()
@@ -192,6 +201,8 @@ func (l *Loop) Start() {
 // This stops processing gracefully. All messages sent to l.Input before calling Stop
 // will be processed.
 func (l *Loop) Stop() {
+	l.startStopLock.Lock()
+	defer l.startStopLock.Unlock()
 	l.running = false
 	close(l.channel[RECEIVER])
 }
@@ -215,7 +226,7 @@ func (l *Loop) GetMessage(i uint64) *Message {
 		i = i % l.bufferSize
 	}
 
-	return l.buffer[i]
+	return (*Message)(atomic.LoadPointer(&l.buffer[i]))
 }
 
 // SetMessage sets the message at the given address in the buffer.
@@ -230,7 +241,7 @@ func (l *Loop) SetMessage(i uint64, m *Message) {
 		i = i % l.bufferSize
 	}
 
-	l.buffer[i] = m
+	atomic.StorePointer(&l.buffer[i], unsafe.Pointer(m))
 }
 
 // GetBufferSize returns the size of the Loop's Message buffer array.
@@ -240,7 +251,10 @@ func (l *Loop) GetBufferSize() uint64 {
 
 // run starts all the Handler management goroutines.
 func (l *Loop) run() {
+	l.startStopLock.Lock()
+	defer l.startStopLock.Unlock()
 	l.running = true
+
 	go l.runReceiver(l.receiver)
 	go l.runHandler(l.handler[JOURNALER], JOURNALER)
 	go l.runHandler(l.handler[REPLICATOR], REPLICATOR)
@@ -263,17 +277,17 @@ func (l *Loop) runReceiver(h ReceiverHandler) {
 		}
 
 		// Let the next handler know it can proceed without blocking this one
-		if len(journalChannel) == 0 {
-			select {
-			case journalChannel <- 1:
-				// journal handler was notified
-			default:
-				// journal handler already knows, but hasn't processed new messages yet
-			}
+		select {
+		case journalChannel <- struct{}{}:
+			// journal handler was notified
+		default:
+			// journal handler already knows, but hasn't processed new messages yet
 		}
 	}
 
 	// Close the other handler channels so they stop gracefully
+	l.startStopLock.Lock()
+	defer l.startStopLock.Unlock()
 	for k, v := range l.channel {
 		if k != RECEIVER {
 			close(v)
@@ -309,9 +323,9 @@ func (l *Loop) runHandler(h Handler, t int) {
 			}
 
 			// Let the next handler know it can proceed without blocking this one
-			if len(nextChannel) == 0 && l.running && t != EXECUTOR {
+			if t != EXECUTOR {
 				select {
-				case nextChannel <- 1:
+				case nextChannel <- struct{}{}:
 					// Notified next handler that Messages are available
 				default:
 					// Handler already knows, but hasn't processed new messages yet

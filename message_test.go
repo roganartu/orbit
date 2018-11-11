@@ -11,9 +11,9 @@ func TestGetMessage(t *testing.T) {
 
 	// Check out of bounds index wrapping
 	msg := loop.GetMessage(1)
-	msg.marshalled = []byte(test + string(1))
+	msg.SetMarshalled([]byte(test + string(1)))
 	msg = loop.GetMessage(1 + buffer_size)
-	assert.Equal(t, msg.marshalled, []byte(test+string(1)))
+	assert.Equal(t, msg.GetMarshalled(), []byte(test+string(1)))
 }
 
 func TestSetMessage(t *testing.T) {
@@ -40,6 +40,7 @@ func TestMessageUnmarshalled(t *testing.T) {
 		"testing",
 	}
 	msg := Message{}
+	msg.Init()
 	msg.SetUnmarshalled(tmp)
 	assert.Equal(t, msg.GetUnmarshalled(), tmp)
 }

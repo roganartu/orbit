@@ -2,6 +2,7 @@ package orbit
 
 import (
 	"io"
+	"sync/atomic"
 )
 
 // Message is the object that is stored in the Loop ring buffer.
@@ -12,40 +13,45 @@ type Message struct {
 	id uint64
 
 	// Marshalled (raw) data as it was input into the loop
-	marshalled interface{}
+	marshalled *atomic.Value
 
 	// Unmarshalled data.
 	// Using an interface allows the package user to define what their
 	// unmarshalled data stucture should look like.
-	unmarshalled interface{}
+	unmarshalled *atomic.Value
 
-	// Where the result should be returned to.
+	// Where the result should be written to.
 	// Can be any interface that has a Write([]byte) method available
 	output io.Writer
 }
 
+func (m *Message) Init() {
+	m.marshalled = &atomic.Value{}
+	m.unmarshalled = &atomic.Value{}
+}
+
 func (m *Message) GetID() uint64 {
-	return m.id
+	return atomic.LoadUint64(&m.id)
 }
 
 func (m *Message) SetID(id uint64) {
-	m.id = id
+	atomic.StoreUint64(&m.id, id)
 }
 
 func (m *Message) GetMarshalled() interface{} {
-	return m.marshalled
+	return m.marshalled.Load()
 }
 
 func (m *Message) SetMarshalled(v interface{}) {
-	m.marshalled = v
+	m.marshalled.Store(v)
 }
 
 func (m *Message) GetUnmarshalled() interface{} {
-	return m.unmarshalled
+	return m.unmarshalled.Load()
 }
 
 func (m *Message) SetUnmarshalled(obj interface{}) {
-	m.unmarshalled = obj
+	m.unmarshalled.Store(obj)
 }
 
 func (m *Message) Write(b []byte) (int, error) {
