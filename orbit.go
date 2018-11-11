@@ -32,8 +32,10 @@ import (
 // it is safe practice for the system in any case.
 type Handler func(Processor, []uint64)
 
-// ReceiverHandler is the same as Handler except it is designed to take arbitrary input
-// and store it in the buffer instead of processing data that is already in the buffer.
+// ReceiverHandler is the same as Handler except it takes arbitrary input
+// and stores it in the buffer instead of processing data that is already in the buffer.
+// TODO merge this with Handler by passing in a struct with a bool to store, and a start/end
+// index instead of a slice?
 type ReceiverHandler func(Processor, uint64, interface{})
 
 // Loop maintains buffers and Consumers.
