@@ -1,13 +1,15 @@
-package orbit
+package orbit_test
 
 import (
 	"testing"
 
 	"github.com/bmizerany/assert"
+
+	target "github.com/roganartu/orbitus"
 )
 
 func TestGetMessage(t *testing.T) {
-	loop := New(buffer_size, nil, nil, nil, nil, nil)
+	loop := target.New(buffer_size, nil, nil, nil, nil, nil)
 
 	// Check out of bounds index wrapping
 	msg := loop.GetMessage(1)
@@ -17,7 +19,7 @@ func TestGetMessage(t *testing.T) {
 }
 
 func TestSetMessage(t *testing.T) {
-	loop := New(buffer_size, nil, nil, nil, nil, nil)
+	loop := target.New(buffer_size, nil, nil, nil, nil, nil)
 
 	// Check out of bounds index wrapping
 	msg := loop.GetMessage(1)
@@ -28,7 +30,7 @@ func TestSetMessage(t *testing.T) {
 }
 
 func TestMessageID(t *testing.T) {
-	msg := Message{}
+	msg := target.Message{}
 	msg.SetID(uint64(100))
 	assert.Equal(t, msg.GetID(), uint64(100))
 }
@@ -39,14 +41,14 @@ func TestMessageUnmarshalled(t *testing.T) {
 	}{
 		"testing",
 	}
-	msg := Message{}
+	msg := target.Message{}
 	msg.Init()
 	msg.SetUnmarshalled(tmp)
 	assert.Equal(t, msg.GetUnmarshalled(), tmp)
 }
 
 func BenchmarkGetMessage(b *testing.B) {
-	loop := New(buffer_size, nil, nil, nil, nil, nil)
+	loop := target.New(buffer_size, nil, nil, nil, nil, nil)
 	for i := 0; i < b.N; i++ {
 		loop.GetMessage(uint64(i))
 	}

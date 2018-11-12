@@ -1,4 +1,4 @@
-package orbit
+package orbit_test
 
 import (
 	"sync"
@@ -6,6 +6,9 @@ import (
 	"time"
 
 	"github.com/bmizerany/assert"
+	"github.com/roganartu/orbitus/handlers"
+
+	target "github.com/roganartu/orbitus"
 )
 
 var (
@@ -14,49 +17,61 @@ var (
 
 	runCheckLock = &sync.Mutex{}
 
+	// TODO pull these out into a mock subpackage
 	receiverRan = false
-	receiver    = func(p Processor, id uint64, i interface{}) {
+	receiver    = func(p target.Processor, id uint64, val interface{}) {
 		runCheckLock.Lock()
 		defer runCheckLock.Unlock()
 		receiverRan = true
-		p.SetReceiverIndex(id + 1)
+
+		msg := p.GetMessage(id)
+		msg.SetID(id)
+		msg.SetMarshalled(val)
+		p.SetMessage(id, msg)
+
+		p.SetIndex(handlers.RECEIVER, id+1)
 	}
+
 	journalerRan = false
-	journaler    = func(p Processor, ids []uint64) {
+	journaler    = func(p target.Processor, ids []uint64) {
 		runCheckLock.Lock()
 		defer runCheckLock.Unlock()
 		journalerRan = true
-		p.SetJournalerIndex(ids[0])
+		handlers.Journaler(p, ids)
 	}
+
 	replicatorRan = false
-	replicator    = func(p Processor, ids []uint64) {
+	replicator    = func(p target.Processor, ids []uint64) {
 		runCheckLock.Lock()
 		defer runCheckLock.Unlock()
 		replicatorRan = true
-		p.SetReplicatorIndex(ids[0])
+		handlers.Replicator(p, ids)
 	}
+
 	unmarshallerRan = false
-	unmarshaller    = func(p Processor, ids []uint64) {
+	unmarshaller    = func(p target.Processor, ids []uint64) {
 		runCheckLock.Lock()
 		defer runCheckLock.Unlock()
 		unmarshallerRan = true
-		p.SetUnmarshallerIndex(ids[0])
+		handlers.Unmarshaller(p, ids)
 	}
+
 	executorRan = false
-	executor    = func(p Processor, ids []uint64) {
+	executor    = func(p target.Processor, ids []uint64) {
 		runCheckLock.Lock()
 		defer runCheckLock.Unlock()
 		executorRan = true
-		p.SetExecutorIndex(ids[0])
+		handlers.Executor(p, ids)
 	}
 )
 
 func TestDefaultReceiver(t *testing.T) {
-	loop := New(buffer_size, nil, nil, nil, nil, nil)
-	loop.Start()
+	loop := target.New(buffer_size, receiver, journaler, replicator, unmarshaller, executor)
+	err := loop.Start()
+	assert.Equal(t, nil, err)
 
 	loop.Input <- []byte(test)
-	time.Sleep(1 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond)
 
 	loop.Stop()
 
@@ -66,25 +81,23 @@ func TestDefaultReceiver(t *testing.T) {
 }
 
 func TestGetBufferSize(t *testing.T) {
-	loop := New(buffer_size, nil, nil, nil, nil, nil)
+	loop := target.New(buffer_size, nil, nil, nil, nil, nil)
 	assert.Equal(t, buffer_size, loop.GetBufferSize())
 }
 
-func TestGetExecutorIndex(t *testing.T) {
-	loop := New(buffer_size, nil, nil, nil, nil, nil)
-	assert.Equal(t, uint64(0), loop.GetIndex(EXECUTOR))
+func TestGetIndex(t *testing.T) {
+	loop := target.New(buffer_size, nil, nil)
+	assert.Equal(t, uint64(1), loop.GetIndex(0))
 }
 
 func TestNew(t *testing.T) {
-	loop := New(buffer_size, nil, nil, nil, nil, nil)
+	loop := target.New(buffer_size, nil, nil, nil, nil, nil)
 	var i uint64 = 4
 
 	// Ensure all the indexes are initialized to zero
-	assert.Equal(t, i, loop.GetIndex(RECEIVER))
-	assert.Equal(t, i-1, loop.GetIndex(JOURNALER))
-	assert.Equal(t, i-2, loop.GetIndex(REPLICATOR))
-	assert.Equal(t, i-3, loop.GetIndex(UNMARSHALLER))
-	assert.Equal(t, i-4, loop.GetIndex(EXECUTOR))
+	for j := 0; j < 5; j++ {
+		assert.Equal(t, i-uint64(j), loop.GetIndex(j))
+	}
 
 	// Ensure buffer has been fully allocated
 	for i = 0; i < buffer_size; i++ {
@@ -104,15 +117,15 @@ func TestLoopStart(t *testing.T) {
 		false, false, false, false, false
 	runCheckLock.Unlock()
 
-	loop := New(buffer_size, receiver, journaler, replicator,
-		unmarshaller, executor)
-	loop.Start()
+	loop := target.New(buffer_size, receiver, journaler, replicator, unmarshaller, executor)
+	err := loop.Start()
+	assert.Equal(t, nil, err)
 
 	// Manually add a new message to the receiver buffer to be processed
 	// "{\"test\":\"This is a test message\"}" Base64 encoded
 	loop.Input <- []byte("eyJ0ZXN0IjoiVGhpcyBpcyBhIHRlc3QgbWVzc2FnZSJ9")
 
-	time.Sleep(1 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond)
 
 	loop.Stop()
 
@@ -126,7 +139,7 @@ func TestLoopStart(t *testing.T) {
 }
 
 func TestReceiverLoopReset(t *testing.T) {
-	loop := New(buffer_size, nil, nil, nil, nil, nil)
+	loop := target.New(buffer_size, receiver, journaler, replicator, unmarshaller, executor)
 	var i uint64
 	testvals := []uint64{1, buffer_size - 1, buffer_size, buffer_size + 1}
 
@@ -135,25 +148,27 @@ func TestReceiverLoopReset(t *testing.T) {
 		assert.Equal(t, nil, err)
 
 		// Ensure all indexes have been set to the given value
-		assert.Equal(t, i, loop.GetIndex(RECEIVER))
-		assert.Equal(t, i-1, loop.GetIndex(JOURNALER))
-		assert.Equal(t, i-2, loop.GetIndex(REPLICATOR))
-		assert.Equal(t, i-3, loop.GetIndex(UNMARSHALLER))
-		assert.Equal(t, i-4, loop.GetIndex(EXECUTOR))
+		for j := 0; j < 5; j++ {
+			assert.Equal(t, i-uint64(j), loop.GetIndex(j))
+		}
 	}
 
 	// Ensure loop does not reset if running
-	loop.running = true
-	err := loop.Reset(buffer_size)
-	assert.Equal(t, "Cannot reset a running Loop", err.Error())
+	err := loop.Start()
+	assert.Equal(t, nil, err)
+	time.Sleep(1 * time.Millisecond)
+	err = loop.Reset(buffer_size)
+	assert.NotEqual(t, nil, err)
+	assert.Equal(t, "cannot reset a running Loop", err.Error())
 }
 
 func BenchmarkIntegrated(b *testing.B) {
-	loop := New(buffer_size, receiver, journaler, replicator,
-		unmarshaller, executor)
-	receiverRan, journalerRan, replicatorRan, unmarshallerRan, executorRan =
-		false, false, false, false, false
-	loop.Start()
+	loop := target.New(buffer_size, receiver, journaler, replicator, unmarshaller, executor)
+	receiverRan, journalerRan, replicatorRan, unmarshallerRan, executorRan = false, false, false, false, false
+	err := loop.Start()
+	if err != nil {
+		b.Fatalf("Failed to start loop: %s", err)
+	}
 	defer loop.Stop()
 
 	// Manually add a new message to the receiver buffer to be processed

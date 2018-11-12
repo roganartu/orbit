@@ -7,10 +7,21 @@ package orbit
 
 import (
 	"errors"
+	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 	"unsafe"
 )
+
+// This is the minimum number of GOMAXPROCS that is required to run this lib
+// from an external thread (eg: the calling thread) without deadlocking.
+// There's 5 orbit threads (main loop + 4 handlers), plus 1 for the calling thread.
+// TODO allow users to configure which handlers they are ok with not being locked?
+// This will degrade performance, but would be interesting to benchmark how much,
+// especially if eg: the main receiving thread isn't blocked since everything
+// else can happily happen async.
+const minProcs = 6
 
 // Handler is the Consumer handler function type.
 // Defaults are provided, however it is expected most users will define their
@@ -78,20 +89,8 @@ type Loop struct {
 // Strictly speaking the Sender is not required and is mostly useful for using Orbit
 // behind a client endpoint where the client expects a response.
 type Processor interface {
-	// Set the receiver index to the given value
-	SetReceiverIndex(uint64) error
-
-	// Set the journaler index to the given value
-	SetJournalerIndex(uint64) error
-
-	// Set the replicator index to the given value
-	SetReplicatorIndex(uint64) error
-
-	// Set the unmarshaller index to the given value
-	SetUnmarshallerIndex(uint64) error
-
-	// Set index of Business Logic Consumer to the given value
-	SetExecutorIndex(uint64) error
+	// SetIndex sets the index at the given pos to the given value.
+	SetIndex(int, uint64) error
 
 	// Get the message at the given address in the buffer.
 	GetMessage(uint64) *Message
@@ -107,10 +106,7 @@ type Processor interface {
 func New(
 	size uint64,
 	receiver ReceiverHandler,
-	journaler Handler,
-	replicator Handler,
-	unmarshaller Handler,
-	executor Handler,
+	handlers ...Handler,
 ) *Loop {
 	loop := &Loop{
 		bufferSize: size,
@@ -121,9 +117,9 @@ func New(
 		startStopLock: &sync.Mutex{},
 
 		// Create handler and index arrays
-		handler: make([]Handler, 5),
-		index:   make([]uint64, 5),
-		channel: make([]chan struct{}, 5),
+		handler: make([]Handler, len(handlers)),
+		index:   make([]uint64, len(handlers)+1),
+		channel: make([]chan struct{}, len(handlers)+1),
 
 		// Create the input stream channel
 		// TODO allow tweaking this size. It is likely to affect performance, especially in IO-heavy workloads
@@ -131,22 +127,12 @@ func New(
 	}
 	// Assign Handlers
 	loop.receiver = receiver
-	loop.handler[JOURNALER] = journaler
-	loop.handler[REPLICATOR] = replicator
-	loop.handler[UNMARSHALLER] = unmarshaller
-	loop.handler[EXECUTOR] = executor
-
-	if loop.receiver == nil {
-		loop.receiver = defaultReceiverFunction
-	}
-	for k, v := range loop.handler {
-		if k != RECEIVER && v == nil {
-			loop.handler[k] = DEFAULT_HANDLER[k]
-		}
+	for k, v := range handlers {
+		loop.handler[k] = v
 	}
 
-	// Start at index 4 so we don't have index underflow
-	loop.Reset(4)
+	// Start at the last index so we don't underflow as we add new items
+	loop.Reset(uint64(len(handlers)))
 
 	// Create 'size' new Message objects and store them in the buffer.
 	// This avoids costly object creation and GC while streaming data.
@@ -162,6 +148,32 @@ func New(
 	return loop
 }
 
+// SetIndex sets the index of the given handler id to the given value.
+//
+// The provided value is checked to ensure that it is within acceptable bounds.
+// Specifically, it cannot be less than the current index or greater than the next,
+// after wrapping around
+//
+// If the above rules are broken an error is returned, else nil.
+func (l *Loop) SetIndex(pos int, val uint64) error {
+	if val < l.GetIndex(pos) {
+		return errors.New("new index cannot be less than current index")
+	}
+
+	nextIndex := l.GetNextIndex(pos)
+	if val >= nextIndex {
+		// pos=0 is a special case here, because GetNextIndex wraps around backwards.
+		// To handle this we need to check if the new index value will wrap around
+		// past the last consumer in the buffer.
+		if pos != 0 || (val > l.GetBufferSize() && val%l.GetBufferSize() > nextIndex) {
+			return errors.New("new index cannot overtake the index of the next consumer")
+		}
+	}
+
+	l.index[pos] = val
+	return nil
+}
+
 // Reset sets all indexes to a given value.
 // This is useful for rebuilding Loop state from an input file
 // (eg: journaled output) instead of manually looping through the buffer until
@@ -170,15 +182,23 @@ func New(
 // Returns an error if called while Lopp is running. Stop Loop with
 // Loop.Stop() before resetting.
 func (l *Loop) Reset(i uint64) error {
+	l.startStopLock.Lock()
+	defer l.startStopLock.Unlock()
 	if l.running {
-		return errors.New("Cannot reset a running Loop")
+		return errors.New("cannot reset a running Loop")
 	}
 
 	// Bypass the setters otherwise their sanity checks will error
-	var j uint64
-	for j = 0; j <= EXECUTOR; j++ {
+	// This organises the handlers in reverse order in the ring buffer.
+	// eg if i==4:
+	//     4: Receiver
+	//     3: Journaler
+	//     2: Replicator
+	//     1: Unmarshaller
+	//     0: Executor
+	for j, _ := range l.index {
 		// The first item in index should be first in the buffer
-		l.index[j] = i - j
+		l.index[j] = i - uint64(j)
 	}
 
 	return nil
@@ -190,13 +210,19 @@ func (l *Loop) Reset(i uint64) error {
 // These goroutines handle the index checking logic and call the provided
 // Handler function when there is data in the buffer available for it to
 // process.
-func (l *Loop) Start() {
+func (l *Loop) Start() error {
+	// if runtime.GOMAXPROCS(-1) < minProcs {
+	// 	return errors.New("GOMAXPROCS is insufficient to lock all handlers to separate threads")
+	// }
+
 	// Allocate channels
 	for i := range l.channel {
 		l.channel[i] = make(chan struct{}, 1)
 	}
 
+	// TODO add config to enable CPU and mem profiling
 	go l.run()
+	return nil
 }
 
 // Stop stops the Loop processing.
@@ -206,7 +232,11 @@ func (l *Loop) Stop() {
 	l.startStopLock.Lock()
 	defer l.startStopLock.Unlock()
 	l.running = false
-	close(l.channel[RECEIVER])
+	// TODO register this as an OnStop event
+	// Stop the receiver channel so we don't process any new messages.
+	if l.channel[0] != nil {
+		close(l.channel[0])
+	}
 }
 
 // GetIndex returns the Loop's current index for the provided Consumer.
@@ -215,7 +245,29 @@ func (l *Loop) Stop() {
 //
 // h is the handler to fetch the index for.
 func (l *Loop) GetIndex(h int) uint64 {
+	// The 0th index is the receiver
 	return l.index[h]
+}
+
+// GetNextIndex returns the Loop's current index for the Consumer after the provided pos.
+// This is the same as GetIndex, except it returns the index at h-1 (wrapping
+// around to the end of the pos list if h is the first item).
+//
+// This is in reverse order, because of the way the ring buffer is arranged.
+// The receiver is always at the front of the ring buffer, and lives at h=0.
+// All other consumers are arranged in order of execution in the pipeline after
+// the Receiver, ie:
+//    0: Receiver
+//    1: First consumer in pipeline
+//    2: 2nd consumer in pipeline
+//    3: Last consumer in pipeline
+//
+// h is the handler to fetch the index for.
+func (l *Loop) GetNextIndex(h int) uint64 {
+	if h-1 < 0 {
+		return l.index[len(l.index)-1]
+	}
+	return l.index[h-1]
 }
 
 // GetMessage returns the message at the given address in the buffer.
@@ -257,30 +309,31 @@ func (l *Loop) run() {
 	defer l.startStopLock.Unlock()
 	l.running = true
 
+	// TODO Make these run on different OS threads with runtime.LockOSThread
+	// TODO actually allow these to be configured, instead of always using the defaults.
 	go l.runReceiver(l.receiver)
-	go l.runHandler(l.handler[JOURNALER], JOURNALER)
-	go l.runHandler(l.handler[REPLICATOR], REPLICATOR)
-	go l.runHandler(l.handler[UNMARSHALLER], UNMARSHALLER)
-	go l.runHandler(l.handler[EXECUTOR], EXECUTOR)
+	for i, handler := range l.handler {
+		go l.runHandler(handler, i+1)
+	}
 }
 
 // runReceiver processes messages sent to it until the channel is closed.
 func (l *Loop) runReceiver(h ReceiverHandler) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	var i uint64
-	journalChannel := l.channel[RECEIVER+1]
-	arr := []uint64{0}
+	firstChannel := l.channel[1]
 	for msg := range l.Input {
-		i = l.GetIndex(RECEIVER)
+		i = l.GetIndex(0)
 
 		// Run handler
 		if h != nil {
-			arr[0] = i
 			h(l, i, msg)
 		}
 
 		// Let the next handler know it can proceed without blocking this one
 		select {
-		case journalChannel <- struct{}{}:
+		case firstChannel <- struct{}{}:
 			// journal handler was notified
 		default:
 			// journal handler already knows, but hasn't processed new messages yet
@@ -291,7 +344,7 @@ func (l *Loop) runReceiver(h ReceiverHandler) {
 	l.startStopLock.Lock()
 	defer l.startStopLock.Unlock()
 	for k, v := range l.channel {
-		if k != RECEIVER {
+		if k != 0 {
 			close(v)
 		}
 	}
@@ -303,35 +356,42 @@ func (l *Loop) runReceiver(h ReceiverHandler) {
 // handlers finish processing anything available to them before stopping.
 func (l *Loop) runHandler(h Handler, t int) {
 	var this, last, i, j uint64
-	nextChannel := l.channel[(t+1)%(EXECUTOR+1)]
+	nextChannel := l.channel[(t+1)%(len(l.channel))]
 	for _ = range l.channel[t] {
+	retry:
 		// Get the current indexes.
 		// this - current index of this Handler
 		// last - highest index that this Handler can process
 		this = l.GetIndex(t)
-		last = l.GetIndex(t-1) - 1
+		last = l.GetNextIndex(t) - 1
 
-		// Check if we can process anything
-		if this < last {
-			// Build list of indexes to process
-			indexes := make([]uint64, last-this)
-			for i, j = this+1, 0; i <= last; i, j = i+1, j+1 {
-				indexes[j] = i
-			}
+		// Check if we can process anything, sleep and retry if not
+		if this >= last {
+			// Wait until the other handlers have processed things
+			// TODO make this sleep configurable
+			time.Sleep(100 * time.Microsecond)
+			goto retry
+		}
 
-			// Call the Handler
-			if h != nil {
-				h(l, indexes)
-			}
+		// Build list of indexes to process
+		// TODO limit this to some max buffer size?
+		indexes := make([]uint64, last-this)
+		for i, j = this+1, 0; i <= last; i, j = i+1, j+1 {
+			indexes[j] = i
+		}
 
-			// Let the next handler know it can proceed without blocking this one
-			if t != EXECUTOR {
-				select {
-				case nextChannel <- struct{}{}:
-					// Notified next handler that Messages are available
-				default:
-					// Handler already knows, but hasn't processed new messages yet
-				}
+		// Call the Handler
+		if h != nil {
+			h(l, indexes)
+		}
+
+		// Let the next handler know it can proceed without blocking this one
+		if t < len(l.handler) {
+			select {
+			case nextChannel <- struct{}{}:
+				// Notified next handler that Messages are available
+			default:
+				// Handler already knows, but hasn't processed new messages yet
 			}
 		}
 	}
